@@ -1,6 +1,5 @@
 #include <Eigen/Dense>
 #include <EigenTypes.h>
-
 #include <vector>
 #include <tuple>
 

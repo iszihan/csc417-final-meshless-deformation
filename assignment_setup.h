@@ -93,8 +93,9 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         collision_box_floor(collision_positions, collision_normals, collision_objects, R, p, ii, geometry[ii].first, floor_normal, floor_pos);
     }
  
-    if(!simulation_pause)
+    if(!simulation_pause){
         exponential_euler_lcp_contact(q, qdot, dt, mass_matrices, forces, collision_normals, collision_positions, collision_objects);
+    }
     
 }
 

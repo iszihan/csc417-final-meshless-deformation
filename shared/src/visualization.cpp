@@ -247,7 +247,6 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
     }
 
     void Visualize::setup(const Eigen::VectorXd &q, const Eigen::VectorXd &qdot, bool ps_plot) {
-
         g_q = &q;
         g_qdot = &qdot;
 
@@ -311,6 +310,8 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
 
         Visualize::g_viewer.core().background_color.setConstant(1.0);
         Visualize::g_viewer.core().is_animating = true;
+        std::cout<<"here"<<std::endl;
+
     }
 
     void Visualize::add_object_to_scene(const Eigen::MatrixXd &V, const Eigen::MatrixXi &F, 
@@ -327,13 +328,17 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
 
         g_viewer.data().set_mesh(V_skin,F_skin);
         g_viewer.data().set_colors(color);
-
+    
         //add mesh to geometry vector
         g_geometry.push_back(std::make_pair(V,F));
         g_color.push_back(color);
         g_skin.push_back(std::make_pair(V_skin,F_skin));
         g_N.push_back(N);
 
+    }
+
+    void Visualize::set_visible(unsigned int obj_id, bool visible) {
+        g_viewer.data_list[g_id[obj_id]].set_visible(visible);
     }
 
     void Visualize::rigid_transform_1d(unsigned int id, double x) {
@@ -352,6 +357,7 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
         //reset vertex positions 
         for(unsigned int ii=0; ii<g_geometry[id].first.rows(); ++ii) {
             g_viewer.data_list[g_id[id]].V(ii,0) = x*g_geometry[id].first(ii,0);
+            g_geometry[id].first(ii,0) = x*g_geometry[id].first(ii,0);
          }
 
          //tell viewer to update
@@ -473,8 +479,4 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
                 g_viewer.data_list[g_id[ii]].set_colors(g_color[ii]);
             }
         }
-    }
-
-    const Eigen::MatrixXd & Visualize::geometry(unsigned int id) {
-        return g_geometry[g_id[id]].first;
     }

@@ -1,6 +1,6 @@
 ## Introduction
 
-In this final assignment we will finally consider how to model contact between objects. Specifically we will adapt the unconstrained rigid body simulation from the [previous assignment](https://github.com/dilevin/CSC2549-a5-rigid-bodies/) to support contact resolution by solving a Linear Complimentarity Problem. 
+This assignment will give you the chance to implement a simple cloth simulation. We will leverage our new found expertise on [finite element methods](www.github.com/dilevin/CSC2549-a3-finite-elements-3d) to build a FEM cloth simulation. This simulation will use triangles, rather than tetrahedron as the finite elements and will use a principal stretch-based model for the cloth material. You will also implement your first contact response model, a simple velocity filter that can be bolted onto standard time integration schemes. 
 
 ### Prerequisite installation
 
@@ -11,13 +11,13 @@ Windows[³](#³windowsusers).
 We also assume that you have cloned this repository using the `--recursive`
 flag (if not then issue `git submodule update --init --recursive`). 
 
-**Note:** We only officially support these assignments on Ubuntu Linux 18.04 (the OS the teaching labs are running) and OSX 10.13 (the OS I use on my personal laptop). While they *should* work on other operating systems, we make no guarantees.  
+**Note:** We only officially support these assignments on Ubuntu Linux 18.04 (the OS the teaching labs are running) and OSX 10.13 (the OS I use on my personal laptop). While they *should* work on other operating systems, we make no guarantees. 
 
 **All grading of assignments is done on Linux 18.04**
 
 ### Layout
 
-All assignments will have a similar directory and file layout: 
+All assignments will have a similar directory and file layout:
 
     README.md
     CMakeLists.txt
@@ -83,7 +83,7 @@ Followed by:
 Your code should now run significantly (sometimes as much as ten times) faster. 
 
 If you are using Windows, then running `cmake ..` should have created a Visual Studio solution file
-called `a6-rigid-body-contact.sln` that you can open and build from there. Building the project will generate an .exe file.
+called `a4-cloth-simulation.sln` that you can open and build from there. Building the project will generate an .exe file.
 
 Why don't you try this right now?
 
@@ -91,178 +91,199 @@ Why don't you try this right now?
 
 Once built, you can execute the assignment from inside the `build/` using 
 
-    ./a6-rigid-body-contact
+    ./a4-cloth-simulation
 
-While running, you can unpause/pause the simulation by pressing 's' and reset the position of the rigid body by pressing `r`. 
+While running, you can activate or de-activate the collision sphere by pressing `c`. 
 
 ## Background 
 
-In this final assignment we will augment our previous rigid body integrator with a contact resolution mechanism based on the basic laws of contact mechanics. We will begin by describing the conditions to resolve single point contact, extend this to multi point contact and then to the rigid body regime. Finally we will explore a popular, iterative scheme for solving the contact equations, the projected Gauss-Seidel method. 
+In this assignment we will move from the simulation of volumetric objects to the simulation of thin sheets or thin shells. For thin objects, rather than discretize the volume with tetrahedra (as was done in [assignment 2](https://github.com/dilevin/CSC2549-a2-mass-spring-3d) and [assignment 3](https://github.com/dilevin/CSC2549-a3-finite-elements-3d)) we discretize the [medial surface](http://www.unchainedgeometry.com/medial.html)  of the cloth.  This surface takes the form of a two-dimensional (2d) [manifold](https://en.wikipedia.org/wiki/Manifold) embedded in (3d) space. While many of the concepts you have already learned will carry over to this assignment, the major confounding factor will be evaluating the material model for the cloth on this manifold. To make things more interesting, we will see our first material model expressed in terms of the "principal stretches" of the deformation. 
 
-![Fun with contacting rigid bodies](images/rb_contact.gif)
+In order to allow for more interesting interactions with the cloth, we will also implement collision detection and resolution with an analytical sphere. We will implement a simple collision resolution scheme, via velocity filter. These algorithms try to prevent collisions by "filtering" a previously computed velocity to remove any components that might make collisions worse. While running the assignment code, you can activate or de-activate the collision sphere by pressing `c`. 
+
+![Cloth simulation!](images/cloth.gif)
 
 ## Resources
 
-This [paper](https://animation.rwth-aachen.de/media/papers/2012-EG-STAR_Rigid_Body_Dynamics.pdf) provides a detailed overview of rigid body simulation with contact.
+Somewhat sadly, it is difficult to find a comprehensive resource for modern cloth simulation. However, there are a collection of seminal papers that are helpful to peruse. The first, [Large-Steps in Cloth Simulation](https://www.cs.cmu.edu/~baraff/papers/sig98.pdf) is widely recognized for introducing the linearly-implicit time integrator to graphics. While we won't deal with bending stiffness (think the difference between a Kleenex and a steel sheet), [Discrete quadratic curvature energies](https://www.sciencedirect.com/science/article/abs/pii/S0167839607000891) are still the state-of-the-art approach for triangle mesh cloth. Finally, modern cloth simulators rely on [aggressive remeshing schemes](https://dl.acm.org/citation.cfm?id=2366171) to capture detail while retaining performance. 
 
+## Finite Elements on Manifolds 
 
-## Single Point Contact 
-![single point contact](images/single_point_contact.gif)
+Our major challenge in this assignment arises from the difference in the dimensionality of the cloth material and the world (deformed) space (**NOTE:** I use the terms world and deformed space interchangeably). Cloth is locally two-dimensional (*2d*) while the world  is [*3d*](https://www.quora.com/What-are-all-of-Calvins-alter-egos).  What will be comforting is that, a relatively straight-forward application of the finite-element-method (FEM) will allow us to build a passable dynamic cloth simulator. 
 
-The image above illustrates the most basic setup for a contact problem. It contains a single circular object (blue disk) resting on an infinite plane (black line). There is a single point of contact between these two objects (the contact point $\mathbf{z}$) and associated with this contact point is a shared surface normal ($\mathbf{n}$). Contact mechanics addresses the question of how two such physical objects will behave when they come into contact. 
+## Triangular Finite Elements 
 
-Imagine the following scenario, our disk is falling under gravity and we've managed to take a snapshot of it just as it makes contact with our plane, but before the contact has any effect. In classical mechanics, no two pieces of matter can occupy the same region of space, our goal is to figure out how we can prevent that from happening -- how we can prevent the disc from falling through the plane. 
+The previous assignment applied FEM to *volumetric* simulation -- the simulation of objects with geometry of dimension equal to that of the world space (i.e our bunny and armadillo were 3d as was the world). In this case our finite elements were also volumetric ... they were tetrahedra in the undeformed space of the simulated object. 
 
-Since this is a physics problem we cannot directly manipulate the positions of the disk, rather all interactions happen through forces acting on either the volume (like gravity) or surface of both objects. This is a consequence of Newton's first law (objects in motion remain in motion unless influenced by an external force). We want to choose these forces so that the push the contacting objects away from each other (back into empty space, sometimes called the feasible space). To do this we are going to define a set of rules that will govern such contact mediated interactions. 
+In the case of cloth, the underformed  geometry is of different dimension (2d) than the world space (3d). Because our finite elements divide up the undeformed space, they also need to be 2d. As such we will use [triangles](https://en.wikipedia.org/wiki/Triangle), not tetrahedra as our elements.
 
-To begin, let's consider where our correcting force will come from. It arises as a consequence of Newton's third law, as the disc pushes on the floor, the floor pushes on the disc. From this arises our first rule of contact mechanics -- that the correcting force, actually the **contact force**, is only non-zero when objects are in contact. 
+## Generalized Coordinates and Velocities 
 
-Now that we've defined when the contact force can be applied, we can further define its properties. The most important property of a contact force is that it cannot "pull" the contacting objects back together (its not sticky). This means that locally, the contact force needs to push the objects apart along the normal direction. Finally we need to ensure that the objects are  no longer on a collision course after applying the contact force. 
+Just as in the [previous assignment](https://github.com/dilevin/CSC2549-a3-finite-elements-3d), we need to choose basis, or shape functions with which to approximate functions on our, now triangular, mesh. A triangle as 3 nodes our approximations become
 
-Let's try to define these conditions mathematically for a single point contacting a plane. Furthermore let's assume the plane is fixed in space and cannot move no matter how hard the disk pushes on it.  First, let's define our contact force. Since the force has to push our disk away from the floor, it has to have a component acting normal to the contact point. In fact, any force pushing in any other direction is doing nothing to resolve the potential contact. This implies that a reasonable definition of the contact force acting on the disk is $\mathbf{f_z} = \mathbf{n}\alpha$, where $\alpha$ is a scalar. By definition this force acts normal to the contact surface. For the force to pull the disk towards the plane, it has to act in the opposite of the normal direction. To prevent this we can add the constraint $\alpha >= 0$.  Next, we need to make sure this force is only applied when the disk is in contact with the object. Let's create a new function $d\left(\mathbf{z}\right)$ which computes the [signed distance](https://en.wikipedia.org/wiki/Signed_distance_function) between the two objects at the contact point, $\mathbf{z}$. If the objects are in contact then $d=0$ if the disk passes into the plane, $d < 0$ and if the disc is not contacting the surface $d>0$. Let's assume we are constraining our problem such that $d >= 0$, then we can only apply the contact force when $d = 0$. This means that for each contact point either $d=0$ or $alpha = 0$. If we compute $d\cdot \alpha$ it will always be 0. This is called a [complimentarity](https://en.wikipedia.org/wiki/Complementarity_theory) condition and it is a kind of orthogonality condition. Accordingly we write this as $d \perp \alpha$.  These collected constraints,
+$$ f\left(\mathbf{Y}\right)=\sum_{i=0}^{2}f_i\phi_i\left(\mathbf{Y}\right) $$ 
 
-$$\begin{array}{rcl} \mathbf{f_z} &=& \mathbf{n}\alpha \\ d &\perp& \alpha \\ \alpha &>=& 0 \\ d &>=& 0,\end{array}$$
+where $\phi_i$ are the [barycentric coordinates](https://en.wikipedia.org/wiki/Barycentric_coordinate_system) for a 2D triangle and $\mathbf{Y} \in \mathcal{R}^2$ is the 2d coordinate in the undeformed space. 
 
-are a form of the [**Signorini Conditions**](https://en.wikipedia.org/wiki/Signorini_problem) which arise in all manner of contact problems. 
+However, cloth is really a thin volumetric construct, of which our triangle only represents a small part. We might need information lying slightly off the triangle surface. To account for this we will need to modify our FEM model a bit. First, let's assume our triangle is actually embedded in a 3D undeformed space $\mathbf{X} \in \mathcal{R}^3$. Let's try and and build and appropriate mapping from this space to the world space. 
 
-## Multi Point Contact and the Equations of Motion 
+Given any point $\mathbf{X}$ in the undeformed space, we can compute the barycentric coordinates of the nearest point on our triangle by solving
 
-![multi point contact](images/multi_point_contact.gif)
+$$\begin{bmatrix}\phi_1\left(\mathbf{X}\right)\\\phi_2\left(\mathbf{X}\right)\end{bmatrix} = \left(T^{T}T\right)^{-1}T^T\left(\mathbf{X} - \mathbf{X}_0\right)$$,
 
-Now that we have a mathematical model for a single contact point, let's extend it to multiple points. Let's imagine we have a **collison detector** which will check for collisions between all objects in our scene and return a list of collision points, collision normals and a pair of object identifiers for each contact. In the general case, when neither object in the contacting pair is fixed, we must consider the effect of the contact force on both participating bodies.  For this $z^{th}$ contact we get 
+where $T=\begin{bmatrix}\left(\mathbf{X}_1- \mathbf{X}_0\right) & \left(\mathbf{X}_2- \mathbf{X}_0\right)\end{bmatrix}$ is a matrix of edge vectors. We use the constriaint $\phi_0 + \phi_1+\phi_2=1$ to reconstruct $\phi_0$. This equation finds the barycentric coordinates of the nearest point on the triangle to $\mathbf{X}$ in a least squares fashion. The error in this least squares solve will be orthogonal to the column space of $T$, our triangle. For any point $\mathbf{X}$ we can work out its offset from the triangle by computing $(\mathbf{X}-\mathbf{X}_0)^T\mathbf{N}$, where $\mathbf{X}_0$ is the first vertex of our triangle and $\mathbf{N}$ is the undeformed surface normal of the triangle. Because our triangle has a constant normal, we don't need to worry about where we compute it, which makes this all very convenient. 
 
-$$\begin{array}{rcl} \mathbf{f^A_z} &=& -\mathbf{n}_z\alpha_z \\ \mathbf{f^B_z} &=& \mathbf{n}_z\alpha_z \\ d\left(\mathbf{z^A}, \mathbf{z^B}\right) &\perp& \alpha_z \\ \alpha_z &>=& 0 \\ d\left(\mathbf{z^A}, \mathbf{z^B}\right) &>=& 0,\end{array}$$ 
+Let's assume that our point $\mathbf{X}$ maintains a constant offset from the triangle when deformed. This implies we can reconstruct the world space position by offsetting our point the same distance along the world space normal $\mathbf{n}$. This gives us the following mapping from reference space to world space 
 
-where $A$ and $B$ index the two objects involved in this collision. $d\left(\mathbf{z_A}, \mathbf{z_B}\right)$ measures the distance, in world space, between the contact point on object $A$ and the contact point on object $B$. As we move object $A$ and $B$ around to try and solve this problem,the contact point $z$ will no longer be a single point, rather it will become two points, one attached to each object. Typically we compute this by mapping the original $z$ to the undeformed space of each object, then mapping it back to the world space as the objects move. We compute $d$ on these new, separate points. Finally, notice that our contact forces are setup to ensure that an equal and opposite force is applied to each object at the contact point.  Each contact introduces a new set of forces on some object $A$ and some object $B$, along with the appropriate complimentarity constraints. 
+$$ x\left(\mathbf{X}\right)=\sum_{i=0}^{2}\mathbf{x}_i\phi_i\left(\mathbf{X}\right)+\left(\mathbf{X}-\mathbf{X}_0\right)^T\mathbf{N}\cdot\mathbf{n}\left(\mathbf{x}_0,\mathbf{x}_1,\mathbf{x}_2\right) $$.
 
-## The Equations of Motion for a Single Rigid Body with Multiple Contacts 
+Now we can choose the **generalized coordinates** ($\mathbf{q} \in \mathcal{R}^9$) to be the stacked vector of vertex positions, which defines the **generalized velocities** as the stacked *9d* vector of per-vertex velocities. 
 
-Now that we have a mathematical model for contact forces, we need to combine them with our equations of motion. Since we are simulating rigid bodies, those equations will be the Newton-Euler Equations. Let's make life a little bit easier by considering only a single rigid body, colliding with fixed objects in the scene. The equations of motion tell us that inertial forces need to balance all other external forces acting on the object. The sum of all contact forces acting on a single rigid body is given by 
+## Deformation Gradient 
 
-$$ \mathbf{f}_c = \sum_{z} \pm\mathbf{n}_z\alpha_z, $$ 
+There are lots of ways to handle build a cloth deformation gradient in [literature](https://animation.rwth-aachen.de/media/papers/2013-CAG-AdaptiveCloth.pdf). In this assignment we will be able to avoid these more complicated solution due to our particular choice of undeformed to world space mapping which allows us to directly compute a $3 \times 3$ deformation gradient as 
 
-where the $\pm$ depends on whether the object is $A$ or $B$ in the collision pair. Now $\mathbf{f}_c$ is a world space force in $\mathcal{R}^3$. We know that to convert this to a rigid body force (a torque and a center-of-mass force) we need to multiply by the transpose of the rigid body jacobian $G \in \mathcal{R}^{3 \times 6}$, evaluated at the appropriate undeformed point $\mathbf{Z}$. Here $\mathbf{Z}$ is the contact point $\mathbf{z}$ transformed from world into undeformed space (i.e you need to apply the inverse of the rigid body transform). This gives us the following constrained equations of motion
+$$ \mathrm{F} = \frac{\partial \mathbf{x}}{\partial \mathbf{X}} = \begin{pmatrix} \mathbf{x}_0 & \mathbf{x}_1 & \mathbf{x}_2 & \mathbf{n} \end{pmatrix} \begin{pmatrix} -\mathbf{1}^T\left(\mathrm{T}^T\mathrm{T}\right)^{-1}\mathrm{T}^T\\ \left(\mathrm{T}^T\mathrm{T}\right)^{-1}\mathrm{T}^T\\\mathbf{N}^T\end{pmatrix}$$
 
-$$ \begin{bmatrix} R\mathcal{I}R^T & 0 \\ 0 & mI\end{bmatrix}\begin{bmatrix}\dot{\omega} \\ \ddot{p} \end{bmatrix} = \begin{bmatrix}\omega\times\left(R\mathcal{I}R^T\omega\right)+\tau_{ext} \\ \mathbf{f}_{ext}\end{bmatrix}  + \sum_{z} \pm G\left(\mathbf{Z}\left(\mathbf{z}\right)\right)^T\mathbf{n}_z\alpha_z$$
+## Kinetic Energy
 
-which we can write in matrix form as 
+Armed with the generalized velocities, the formula for the per-triangle kinetic energy is eerily similar to that of assignment 3. It's an integral of the local kinetic energy over the entire triangle, multiplied by the thickness of the cloth, $h$. For this assignment you are free to assume the thickness of the cloth is $1$.
 
-$$ \begin{bmatrix} R\mathcal{I}R^T & 0 \\ 0 & mI\end{bmatrix}\begin{bmatrix}\dot{\omega} \\ \ddot{p} \end{bmatrix} = \begin{bmatrix}\omega\times\left(R\mathcal{I}R^T\omega\right)+\tau_{ext} \\ \mathbf{f}_{ext}\end{bmatrix}  + \mathbf{G}\mathbf{N}\mathbf{\alpha}, $$
+$$ T_{triangle} = \frac{1}{2}\dot{\mathbf{q}}^T\left(h\int_\Gamma\rho\begin{pmatrix}\phi_0\phi_0\mathrm{I}&\phi_0\phi_1\mathrm{I}&\phi_0\phi_2\mathrm{I}\\
+\phi_1\phi_0\mathrm{I}&\phi_1\phi_1\mathrm{I}&\phi_1\phi_2\mathrm{I}\\
+\phi_2\phi_0\mathrm{I}&\phi_2\phi_1\mathrm{I}&\phi_2\phi_2\mathrm{I}
+\end{pmatrix}d\Gamma\right)\dot{\mathbf{q}} $$ 
 
-where $\mathbf{G}$ is a $6 \times 3n_{contacts}$ matrix of stacked $G^T$ matrices, $\mathbf{N}$ is a $3n_{contacts}\times n_{contacts}$ matrix where each column contains a single contact normal, and $\mathbf{\alpha}$ is a $n_{contacts}$ vector of contact force magnitudes.  Using these matrix variables one can see that the remaining complimentarity conditions for this entire dynamic system become 
+and can be compute analytically using a symbolic math package. The per-element mass matrices for  every cloth triangle can then be *assembled* into the mass matrix for the entire mesh. 
 
-$$\begin{array}{rcl} \mathbf{d} &\perp& \mathbf{\alpha} \\ \mathbf{\alpha} &>=& 0 \\ \mathbf{d} &>=& 0\end{array}$$
+## Potential Energy
 
-where $\mathbf{d}$ returns a vector of distances, one for each contact and all inequalities apply component wise to the associated vectors. 
+For this assignment we will use a different type of material model to describe the elastic behaviour of the cloth. This is motivated by the fact that cloth is typically very resistant to stretching. For these materials, a linear stress-strain relationship is often desirable. Unfortunately, cloth triangles also rotate a lot (every time they fold-over for instance). Rotations are **NOT** linear and so a purely linear relationship will suffer from severe artifacts. To avoid this we will build a material model that only measures the in plane deformation of the cloth via its *principal stretches*. 
 
-## The Velocity Level Signorini Conditions
+### Principal Stretches
 
-The system of equations and inequalities above is difficult to solve -- there is a lot of nonlinearity hidden in the calculation of the distance function. One way to side step this is to linearize the equations and solve them at the velocity level. Let's look at how this is done for a single contact. 
+Recall that in the previous assignment we used the right Cauchy strain tensor ($F^T F$) to measure deformation and the rationale for using this was that it measures the squared deformed length of an arbitrary, infinitesimal line of material, $\mathbf{dX}$. In other words, $|\mathbf{dx}|^2 = \mathbf{dX}^T \left(F^T F\right)\mathbf{dX}$.  Because $F$ is symmetric and positive definite, we can perform an [eigendecomposition](https://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix) such that $F^T F = V \Lambda V^T$ where $V$ is the orthogonal matrix of eigenvectors and $\Lambda$ is the diagonal matrix of eigenvalues. This means we can think of this squared length as $|\mathbf{dx}|^2 = \hat{\mathbf{dX}}^T \Lambda \hat{\mathbf{dX}}$ where $\hat{\mathbf{dX}}=U^T\mathbf{dX}$. In other words, if we transform $\mathbf{dX}$ just right, its deformation is completely characterized by $\Lambda$. 
 
-We begin by computing $\frac{d}{dt}d\left(\mathbf{z}^A, \mathbf{z}^B\right)$ which can be conveniently computed as $\mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right)$. Rather than solve the nonlinear complimentarity problem above, we will solve the following [linear complimentarity problem (LCP)](https://en.wikipedia.org/wiki/Linear_complementarity_problem)
+$\Lambda$ are the eigenvalues of $F^T F$ and also the squared [*singular values*](https://en.wikipedia.org/wiki/Singular_value_decomposition) of $F$. We call these singular values of $F$ the [principal stretches](http://www.femdefo.org). They measure deformation independently of the orientation (or rotation/reflection) of the finite element. 
 
-$$\begin{array}{rcl} \mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) &\perp& \mathbf{\alpha} \\ \mathbf{\alpha} &>=& 0 \\ \mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) &>=& 0\end{array}$$
+### Linear Elasticity without the Pesky Rotations
 
-Now we need a way to relate $\dot{\mathbf{z^A}}$ and $\dot{\mathbf{z^B}}$ to $\alpha$. Fortunately we already have such a set of equations, they are the discretized equations of motion from the [previous assignment](https://github.com/dilevin/CSC2549-a5-rigid-bodies/). We have already seen that, for the rigid body $A$.
+Now we can formulate a linear elastic model using the principal stretches which "filters out" any rotational components. Much like the Neohookean material model, this model will have one energy term which measures deformation and one energy term that tries to preserve volume (well area in the case of cloth). We already know we can measure deformation using the principal stretches. We also know that the determinant of $F$ measures the change in volume of a 3D object. In the volumetric case this determinant is just the product of the principal stretches. 
 
-$$\underbrace{\begin{bmatrix} R\mathcal{I}R^T & 0 \\ 0 & mI\end{bmatrix}}_{^AM}\underbrace{\begin{bmatrix}\omega \\ \dot{p} \end{bmatrix}^{t+1}}_{^A\dot{\mathbf{q}}} = \underbrace{\begin{bmatrix} R\mathcal{I}R^T & 0 \\ 0 & mI\end{bmatrix}\begin{bmatrix}\omega \\ \dot{p} \end{bmatrix}^{t} + \Delta t\begin{bmatrix}\omega^{t}\times\left(R\mathcal{I}R^T\omega^{t}\right)+\tau_{ext} \\ \mathbf{f}_{ext}\end{bmatrix}}_{\mathbf{f}} - \Delta t G\left(Z^A\right)^T\mathbf{n}\alpha$$
+$$\psi\left(s_0, s_1, s_2\right) = \mu\sum_{i=0}^2\left(s_i-1\right)^2 + \frac{\lambda}{2}\left(s_0 +  s_1 +s_2-3\right)^2 $$
 
-A little bit of rearranging gives 
+where $\lambda$ and $\mu$ are the material properties for the cloth. The first term in this model attempts to keep $s_0$ and $s_1$ close to one (limiting deformation) while the second term is attempting to preserve the volume of the deformed triangle (it's a linearization of the determinant). This model is called  **co-rotational linear elasticity** because it is linear in the principal stretches but rotates *with* each finite element. When we use energy models to measure the in-plane stretching of the cloth (or membrane), we often refer to them as membrane energies.  
 
-$$ \dot{\mathbf{q}}^{t+1} = \underbrace{\dot{\mathbf{q}}^{t+1}_{unc}}_{^AM^{-1}\mathbf{f}} - ^AM^{-1}\Delta t G\left(Z^A\right)^T\mathbf{n}\alpha $$ 
+### The Gradient of Principal Stretch Models 
 
-where $\dot{\mathbf{q}}^{t+1}_{unc}$ is the unconstrained velocity at time $t+1$ (exactly what we computed for the last assignment). So now we see that, for a single contact there's a relatively simple relationship between the contact force magnitude, $\alpha$, and the resulting velocity.  Now we can use the rigid body jacobian to relate this to the velocity of the contact point, $\mathbf{z}^A$. At the end of each time step, the velocity of $\mathbf{z}^A$ will be
+The strain energy density for principal stretch models, like the one above, are relatively easy to implement and understand. This is a big reason we like them in graphics. We'll also see that the gradient of this model (needed for force computation) is also pretty easy to compute.
 
-$$ \dot{\mathbf{z}^A}  = G\left(Z^A\right)\dot{\mathbf{q}}^{t+1} = G\left(Z^A\right)\dot{\mathbf{q}}^{t+1}_{unc} -  G\left(Z^A\right)^AM^{-1}\Delta t G\left(Z^A\right)^T\mathbf{n}\alpha$$
+Really, the derivative we need to understand how to compute is $\frac{\partial \psi}{\partial F}$. Once we have this we can use $\frac{\partial F}{\partial \mathbf{q}}$ to compute the gradient wrt to the generalized coordinates.  Conveniently, we have the following for principal stretch models.
 
-Formula's for rigid body $B$ are analogous except rather than subtracting contact forces, we **add** them (equal and opposite :) ). 
+$$\frac{\partial \psi}{\partial F} = U\underbrace{\begin{bmatrix}\frac{\partial \psi}{\partial s_0} & 0 & 0 \\ 0 & \frac{\partial \psi}{\partial s_1} & 0 \\ 0 & 0 & \frac{\partial \psi}{\partial s_2}\end{bmatrix}}_{dS}V^T $$ 
 
-Because we can now express $\dot{\mathbf{z^A}}$ and $\dot{\mathbf{z^B}}$ directly as functions of $\alpha$, and because these expressions encode the physical behaviour of our rigid body (via the equations of motion) we can now start to solve this complimentarity problem. Let's start by examining the inequality $\mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) >= 0$. 
+where $F = USV^T$ is the singular value decomposition.
 
-We can now rephrase this inequality completely in terms of $\alpha$, which looks like this
+### The Hessian of Principal Stretch Models
 
-$$ \underbrace{\mathbf{n}^T\left(G\left(Z^B\right)^B\dot{\mathbf{q}}_{unc}-G\left(Z^A\right)^A\dot{\mathbf{q}}_{unc}\right)}_{\gamma} + \underbrace{\Delta t\left(\mathbf{n}^TG\left(Z^B\right)^BM^{-1}G\left(Z^B\right)^T\mathbf{n}+ \mathbf{n}^TG\left(Z^A\right)^AM^{-1}G\left(Z^A\right)^T\mathbf{n}\right)}_{\delta}\alpha >= 0 $$
+Unfortunately, the gradient of the principal stretch energy is not enough. That's because our favourite implicit integrators require second order information to provide the stability and performance we crave in computer graphics. This is where things get messy. The good news is that, if we can just compute $\frac{\partial \psi}{\partial F \partial F}$ then we can use $\frac{\partial F}{\partial \mathbf{q}}$  to compute our Hessian wrt to the generalized coordinates (this follows from the linearity of the FEM formulation wrt to the generalized coordinates).  This formula is going to get ugly so, in an attempt to make it somewhat clear, we are going to consider derivatives wrt to single entries of $F$, denoted $F_{ij}$. In this context we are trying to compute
 
-Let's ignore the inequality and just find $\alpha$ such that $\mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) = 0$. This is given by $\alpha = -\frac{\gamma}{\delta}$. That's a very convenient way to find the magnitude of the contact force that will (linearly) pull our objects so that the distance between their contacting points is zero. The problem is we've ignored all the other parts of the LCP. 
+$$\frac{\partial  }{\partial F_{ij}}\frac{\partial \psi}{\partial F}  = \frac{\partial U}{\partial F_{ij}}dS V^T + U\mbox{diag}\left(\mathbf{ds}_{ij}\right)V^T + UdS \frac{\partial V}{\partial F_{ij}}^T$$
 
-One thing that we know is $\alpha$ must always be greater than, or equal to $0$, and it can only be non-zero if $\mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) = 0$. One obvious thing to is compute our final contact force magnitude as 
+Here $\mbox{diag}\left(\right)$ takes a $3\times 1$ vector as input and converts it into a diagonal matrix, with the entries of the matrix on the diagonal. In our case, we define $\mathbf{ds}$ as 
 
-$$ \alpha = \max\left(0, -\frac{\gamma}{\delta}\right) $$
+$$ \mathbf{ds}_{ij} = \begin{bmatrix}\frac{\partial^2 \psi}{\partial s_0^2} & \frac{\partial^2 \psi}{\partial s_0\partial s_1} & \frac{\partial^2 \psi}{\partial s_0\partial s_2} \\ \frac{\partial^2 \psi}{\partial s_0\partial s_1} & \frac{\partial^2 \psi}{\partial s_1^2} & \frac{\partial^2 \psi}{\partial s_1\partial s_2} \\ \frac{\partial^2 \psi}{\partial s_0\partial s_2} & \frac{\partial^2 \psi}{\partial s_1\partial s_12} & \frac{\partial^2 \psi}{\partial s_2^2}\end{bmatrix}\begin{bmatrix} \frac{\partial s_0}{\partial F_{ij}} \\ \frac{\partial s_1}{\partial F_{ij}} \\ \frac{\partial s_2}{\partial F_{ij}}\end{bmatrix}$$
 
-This ensures $\alpha$ is always greater than zero. It also ensures this only happens when the gap between contact points is $0$ (because that's wht we solved for). Interestingly, due to the structure of the $\delta$ term, one only gets a positive $\alpha$ when $\mathbf{n}^T\left(\dot{\mathbf{z}}^B - \dot{\mathbf{z}}^A\right) <= 0$. This means that contact forces are only applied when the objects are in contact or when one object is inside another (something which we should definitely correct for). Thus, this simple operation solves our single contact point LCP. Next we will use this as the building block of a multi-point contact handling algorithm.
+When looking at this formula **DON'T PANIC**. It's a straight forward application of the chain rule, just a little nastier than usual. Also remember that **I am giving you the code to compute SVD derivatives in dsvd.h/dsvd.cpp**.  
 
-## Solving the Multi-Point Contact Problem using Projected Gauss Seidel 
+If we define the svd of a matrix as $F = USV^T$, this code returns $\frac{\partial U}{\partial F}\in\mathcal{R}^{3\times 3 \times 3 \times 3}$, $\frac{\partial V}{\partial F}\in\mathcal{R}^{3\times 3 \times 3 \times 3}$ and $\frac{\partial S}{\partial F}\in\mathcal{R}^{3\times 3 \times 3}$. Yes this code returns 3 and four dimensional tensors storing this quantities, yes I said never to do this in class, consider this the exception that makes the rule.  The latter two indices on each tensor are the $i$ and $j$ indices used in the formula above. 
 
-With multiple points things get a little trickier, we need to somehow satisfy all our complimentarity conditions at once. One way of doing this is to solve a [quadratic program](https://en.wikipedia.org/wiki/Quadratic_programming) at the velocity level. It turns out that certain LCPs (like the one we solve) define the optimality criteria for quadratic programs and solving one is the same as solving the other. For this project we will **not** solve a QP, instead we will use an iterative method ([projected Gauss-Seidel](http://www.optimization-online.org/DB_FILE/2007/06/1675.pdf)) to directly solve the LCP. This approach is extremely popular in physics-based animation and well worth understanding.
+The hardest part of implementing this gradient correctly is handling the SVD terms. These gradients have a different form based on whether your $F$ matrix is square or rectangular. This is one big reason that the $3 \times 3$ deformation gradient we use in this assignment is desirable. It allows one to use the same singular value decomposition code for volumetric and cloth models. 
 
-Let's imagine we have $n_{contacts}$ contact points. We can augment our contact modified, rigid body update equation with them in the following manner:
+## Collision Detection with Spheres
 
-$$ ^A\dot{\mathbf{q}}^{t+1} = ^A\underbrace{\dot{\mathbf{q}}^{t+1}_{unc}} - \Delta t ^AM^{-1}\sum_{z=0}^{n_c-1}G\left(Z^A\right)^T\mathbf{n}_z\alpha_z $$ 
+To make this assignment a little more visually interesting, you will implement simple collision detection and resolution with an analytical sphere. **Collision Detection** is the process of detecting contact between two or more objects in the scene and **Collision Resolution** is the process of modifying the motion of the object in response to these detected collisions.  
 
-We are going to use this equation to solve (and its counterpart for rigid bod $B$) to solve the contact problem by iteratively updating our $\alpha$'s one-at-a-time. We begin with an initial guess for each $\alpha$ (say $0$). The basic algorithm proceeds in the following manner (sorry about the non-processed latex, its a markdown thing that I cannot figure out).
+For this assignment we will implement per-vertex collision detection with the sphere. This is as simple as detecting if the distance from the center of the sphere to any vertex in your mesh is less than the radius of the sphere. If you detect such a collision, you need to store an **index** to the colliding vertex, along with the outward facing **contact normal**($\mathbf{n}$). In this case, the outward facing contact normal is the sphere normal at the point of contact. 
 
-    iterations = 0
-    all $\alpha$ = 0
+## Collision Resolution 
 
-    While i < max iterations
-        
-        For c = 0 to number of contacts - 1
-             
-             Compute $\delta_c$ 
+The minimal goal of any collision resolution algorithm is to prevent collisions from getting worse locally. To do this we will implement a simple *velocity filter* approach. Velocity filters are so named because the "filter out" components of an objects velocity that will increase the severity of a collision. Given a vertex that is colliding with our sphere, the only way that the collision can get worse locally is if that vertex moves *into* the sphere. One way we can check if this is happening is to compute the projection of the vertex velocity onto the outward facing contact normal ($\mathbf{n}^T\dot{\mathbf{q}}_i$, $i$ selects the $i^th$ contacting vertex). If this number is $>0$ we are OK, the vertex is moving away from the sphere. If this number is $<0$ we better do something. 
 
-             Compute $\gamma_c$
+The thing we will do is project out, or filter out, the component of the velocity moving in the negative, normal direction like so:
 
-             Compute $alpha^{i}_c = \max(0,-frac{\gamma_c}{\delta_c})$
+$$\dot{\mathbf{q}}^{\mbox{filtered}}_i = \dot{\mathbf{q}}_i - \mathbf{n}\mathbf{n}^T\dot{\mathbf{q}}_i$$
 
-        End
-    
-    End
-
-The remaining goal is to come up with formulas for $\delta_z$ and $\gamma_z$.  We do this in a Gauss-Seidel fashion, by dividing the contact forces into three groups -- (1) forces that have been updated this iteration, (2) forces that have yet to be updated and (3) the contact we are currently solving for. With this grouping we arrive at a formula for rigid body velocity that looks like this:
-
-$$ ^A\dot{\mathbf{q}}^{t+1} = ^A\underbrace{\dot{\mathbf{q}}^{t+1}_{unc}} - \underbrace{\Delta t ^AM^{-1}\sum_{z=0}^{c-1}G\left(Z^A\right)^T\mathbf{n}_z\alpha_z}_{^A\mathbf{b}^{i-1}} - \underbrace{\Delta t ^AM^{-1}\sum_{z=c+1}^{n_{contacts}-1}G\left(Z^A\right)^T\mathbf{n}_z\alpha_z}_{^A\mathbf{b}^{i+1}}  - \Delta t ^AM^{-1}G\left(C^A\right)^T\mathbf{n}_c\alpha_c$$ 
-
-Note that $^A\mathbf{b}^{i-1}$ and $^A\mathbf{b}^{i+1}$ can be computed using the values of $\alpha$ at this particular point in the contact point iteration. Solving for the updated $\alpha_c$ is analogous to the single point case. For the contact, $c$, we are currently visiting, we construct
-
-$$ \begin{array}{r} \underbrace{\mathbf{n}_c^T\left(G\left(C^B\right)\left(^B\dot{\mathbf{q}}_{unc} + ^B\mathbf{b}^{i-1} + ^B\mathbf{b}^{i+1}\right)-G\left(C^A\right)\left(^A\dot{\mathbf{q}}_{unc} - ^A\mathbf{b}^{i-1} - ^A\mathbf{b}^{i+1}\right)\right)}_{\gamma_c} + \\ \underbrace{\Delta t\left(\mathbf{n}_c^TG\left(C^B\right)^BM^{-1}G\left(C^B\right)^T\mathbf{n}_c+ \mathbf{n}_c^TG\left(C^A\right)^AM^{-1}G\left(C^A\right)^T\mathbf{n}_c\right)}_{\delta_c}\alpha_c >= 0 \end{array}$$
-
-We then compute $\alpha_c = \max\left(0, -\frac{\gamma_c}{\delta_c}\right)$. The method gets its name due to the Gauss-Seidel like ordering of the $\alpha$ updates and the projection of computed $\alpha$'s onto the set of positive, real numbers. 
-
-While this algorithm can be run to convergence, for interactive applications it is best to limit the number of outer iterations. In our case we will set the maximum number of outer iterations to be **10**. 
+This "fixes" the collision. This approach to collision resolution is fast but for more complicated scenes it is fraught with peril. For instance it doesn't take into account how it is deforming the simulated object which can cause big headaches when objects are stiff or rigid. We'll see a cleaner mathematical approach to content in the final assignment of the course.
 
 ## Assignment Implementation
 
-In this assignment you will adapt your previous, unconstrained rigid body integrator to handle contact using the projected Gauss-Seidel algorithm. The notes above assume the general case in which contact forces act on two objects which are both dynamic. In the assignment your contacts will happen with a fixed ground plane which cannot move. The ground plane will not be a simulated object. Rather you will modify your projected Gauss-Seidel solver to handle such fixed objects. One way to formulate this modification is to treat static objects as having infinite mass. In this way the inverse mass matrix is zero, meaning applied forces have no effect. If the objects initial velocity is zero, it will always be zero. 
+### Implementation Notes
 
-### rodrigues.cpp
+In this assignment you will reuse your linearly implicit integrator to time step the dynamic system. Also, we will eschew implementing the strain energy density function, quadrature rule and potential energies separately. Instead functions for potential energy and its derivatives should directly compute the integrated values for a triangular element.
 
-**Use code from previous assignment.**
+### dphi_cloth_triangle_dX.cpp
 
-### inverse_rigid_body.cpp
+Piecewise constant gradient matrix for linear shape functions. Row $i$ of the returned matrix contains the gradient of the $i^{th}$ shape function.
 
-A method to transform a point from world (deformed) space to body (undeformed) space. 
+### T_cloth.cpp
 
-### rigid_body_jacobian.cpp
+The kinetic energy of the whole cost mesh.
 
-**Use code from previous assignment.**
+###  dV_cloth_gravity_dq.cpp
 
-### inertia_matrix.cpp
+Gradient of potential energy due to gravity
 
-**Use code from previous assignment.**
+###  V_membrane_corotational.cpp
 
-### collision_box_floor.cpp
+Potential energy for the cloth stretching force
 
-Detect contact between a triangle mesh and an arbitrarily positioned plane.
+###  dV_membrane_corotational_dq.cpp
 
-### dV_spring_particle_particle_dq.cpp
+Gradient of the cloth stretching energy.
 
-**Use code from previous assignment.**
+###  d2V_membrane_corotational_dq2.cpp
 
-### exponential_euler_lcp_contact.h
+Hessian matrix of the cloth stretching energy
 
-Implement velocity level collision resolution using progressive Gauss-Seidel and exponential Euler time integration. 
+###  V_spring_particle_particle.cpp
 
-### pick_nearest_vertices.cpp
+**Use your code from the last assignment**
 
-**Use code from previous assignment.**
+###  dV_spring_particle_particle_dq.cpp
+
+**Use your code from the last assignment**
+
+###  mass_matrix_mesh.cpp
+
+Assemble the full mass matrix for the entire tetrahedral mesh.
+
+###  assemble_forces.cpp
+
+Assemble the global force vector for the finite element mesh.
+
+###  assemble_stiffness.cpp
+
+Assemble the global stiffness matrix for the finite element mesh.
+
+###  linearly_implicit_euler.h
+
+**Use your code from the last assignment**
+
+###  fixed_point_constraints.cpp
+
+**Use your code from the last assignment**
+
+###  collision_detection_cloth_sphere.cpp
+
+Detect if any mesh vertex falls inside a sphere centered at (0,0,0.4) with radius 0.22
+
+###  velocity_filter_cloth_sphere.cpp
+
+Project out components of the per-vertex velocities which are in the **positive** direction of the contact normal
+
+###  pick_nearest_vertices.cpp
+
+**Use your code from the last assignment**
+
 

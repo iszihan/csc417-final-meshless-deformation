@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.2)
 
-project(a6-rigid-bodies-contact)
+project(a4-cloth-simulation)
 
 #Important CMAKE stuff
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_CURRENT_SOURCE_DIR}/cmake)

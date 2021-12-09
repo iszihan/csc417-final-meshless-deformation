@@ -1,222 +1,266 @@
 #ifndef ASSIGNMENT_SETUP_H
 #define ASSIGNMENT_SETUP_H
-//A6 code
-#include <Eigen/Dense>
-#include <Eigen/Sparse>
-#include <EigenTypes.h>
 
+//Assignment 4 code
+#include <igl/readMESH.h>
+#include <igl/readOBJ.h>
+#include <igl/writeOBJ.h>
+#include <igl/readOFF.h>
+#include <read_tetgen.h>
+#include <igl/boundary_facets.h>
+#include <igl/volume.h>
+
+//assignment files for implementing simulation and interaction
 #include <visualization.h>
-#include <init_state_rigid_bodies.h>
+#include <init_state.h>
+#include <find_min_vertices.h>
+#include <fixed_point_constraints.h>
+
+#include <mass_matrix_particles.h>
+#include <meshless_implicit_euler.h>
+#include <dsvd.h>
+
+#include <dphi_cloth_triangle_dX.h>
+#include <T_cloth.h>
+#include <V_membrane_corotational.h>
+#include <dV_membrane_corotational_dq.h>
+#include <d2V_membrane_corotational_dq2.h>
+#include <dV_cloth_gravity_dq.h>
+#include <V_spring_particle_particle.h>
 #include <dV_spring_particle_particle_dq.h>
-#include <pick_nearest_vertices.h>
+#include <assemble_forces.h>
+#include <assemble_stiffness.h>
 
-#include <inertia_matrix.h>
-#include <rigid_body_jacobian.h>
-#include <inverse_rigid_body.h>
-#include <exponential_euler_lcp_contact.h>
+//collision detection stuff
+#include <collision_detection.h>
+#include <velocity_filter_cloth_sphere.h>
 
-//collision detection/resolution code
-#include <collision_box_floor.h>
-
-#define RB_OFFSET 12
-#define RB_POS_OFFSET 9
-
-//rigid body geometry
-std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXi>> geometry;
-
-//rigid body mass matrices
-std::vector<Eigen::Matrix66d> mass_matrices;
-
-//skinning matrix for rigid body (necesary for the way I interface with the libigl viewer)
+//Variable for geometry
+Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
+Eigen::MatrixXi F, F_skin; //faces of simulation mesh
+Eigen::MatrixXd V_sphere, V_sphere_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
+Eigen::MatrixXi F_sphere, F_sphere_skin; //faces of simulation mesh
 Eigen::SparseMatrixd N;
+std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXi>> still_geometry;
+std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXi>> moving_geometry;
 
-double density = 1.0;
+//material parameters
+double mass = 0.1;
 
-//some forces for the rigid bodies
-Eigen::VectorXd forces; 
+//BC
+std::vector<unsigned int> fixed_point_indices;
+Eigen::SparseMatrixd P;
+Eigen::VectorXd x0;
 
-//floor collision geometry 
-Eigen::Vector3d floor_normal;
-Eigen::Vector3d floor_pos;
+Eigen::SparseMatrixd M; //mass matrix
+Eigen::Vector3d center_of_mass; //original center of mass
 
-//collision info 
-std::vector<Eigen::Vector3d> collision_normals;
-std::vector<Eigen::Vector3d> collision_positions; 
-std::vector<std::pair<int, int> > collision_objects; //normal points away from the first object
+//scratch memory for assembly
+Eigen::VectorXd tmp_qdot;
+Eigen::VectorXd tmp_force;
+Eigen::VectorXd gravity;
+Eigen::VectorXd qtmp;
 
-Eigen::VectorXd *q_ptr, *qdot_ptr;
+std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points; 
+std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points;
 
+//collision detection stuff
+bool collision_detection_on = false;
 bool simulation_pause = true;
 
 //selection spring
-double k_selected = 1e-1;
-
-inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double t) {  
+double lspring = 0.1;
+double k_selected = 1e5;
+double k_collision = 1e5;
+inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double t)
+{
+    //std::cout<<"inside simulate"<<std::endl;
 
     //Interaction spring
-    Eigen::Vector3d mouse;
-    Eigen::Vector6d dV_mouse;
-    Eigen::Matrix36d rb_jacobian;
-
-    //simulation step
-    collision_normals.clear();
-    collision_positions.clear();
-    collision_objects.clear();
-
-    Eigen::Vector3d gravity;
-    gravity << 0., -0.98, 0.;
-
-    forces.setZero();
-    for(unsigned int irb=0; irb < geometry.size(); ++irb) {
-        forces.segment<3>(6*irb + 3) = mass_matrices[irb].block(3,3,3,3)*gravity;
-    }
-
-    unsigned int irb = 0;
-    for(unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++) {   
-        Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(q.segment<9>(12*irb).data());
-        Eigen::Vector3d p = Eigen::Map<const Eigen::Vector3d>(q.segment<3>(12*irb + 9).data());
-        Eigen::Vector3d x_body; 
-
-        mouse = Visualize::geometry(irb).row(Visualize::picked_vertices()[pickedi]).transpose() + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
-        dV_spring_particle_particle_dq(dV_mouse, mouse, Visualize::geometry(irb).row(Visualize::picked_vertices()[pickedi]).transpose(), 0.0, (Visualize::is_mouse_dragging() ? k_selected : 0.));
-        
-        //std::cout<<dV_mouse.transpose()<<"\n";
-        inverse_rigid_body(x_body, Visualize::geometry(irb).row(Visualize::picked_vertices()[pickedi]).transpose(), R, p);
-        rigid_body_jacobian(rb_jacobian, R, p, x_body);
-        forces.segment<6>(6*irb) -= rb_jacobian.transpose()*dV_mouse.segment<3>(3);
-    }
-
-    for(unsigned int ii=0; ii<geometry.size(); ++ii) {
-        //Get the rotation and position of this rigid body 
-        Eigen::Matrix3d R = Eigen::Map<const Eigen::Matrix3d>(q.segment<9>(12*ii).data());
-        Eigen::Vector3d p = q.segment<3>(12*ii + RB_POS_OFFSET);
-        collision_box_floor(collision_positions, collision_normals, collision_objects, R, p, ii, geometry[ii].first, floor_normal, floor_pos);
-    }
- 
-    if(!simulation_pause){
-        exponential_euler_lcp_contact(q, qdot, dt, mass_matrices, forces, collision_normals, collision_positions, collision_objects);
-    }
-    
-}
-
-inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::VectorXd> qdot, double t) {
-
-    //update vertex positions using simulation
-    for(unsigned int irb=0; irb<geometry.size();++irb) {
-        Eigen::Map<const Eigen::Matrix3d> R = Eigen::Map<const Eigen::Matrix3d>(q.segment<9>(RB_OFFSET*irb).data());
-        Eigen::MatrixXd V_rb = R*(geometry[irb].first.transpose());
-        
-        for(unsigned int jj=0; jj<V_rb.cols(); ++jj) {
-            V_rb.col(jj) += q.segment<3>(RB_OFFSET*irb + RB_POS_OFFSET);
+    if (! simulation_pause){
+        spring_points.clear();
+        Eigen::Vector3d mouse;
+        Eigen::Vector6d dV_mouse;
+        double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
+        for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
+        {   
+            // std::cout<<pickedi<<std::endl;
+            Eigen::Vector3d p1 = (q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
+            Eigen::Vector3d p2 = (q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
+            // std::cout<<p1<<std::endl;
+            // std::cout<<p2<<std::endl;
+            //spring_points.push_back(std::make_pair((P.transpose() * q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
+            spring_points.push_back(std::make_pair((q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
+            
+            //TODO: add a dragging handle visualization
+            //Visualize::scale_x(1, 2.0);
         }
-        Visualize::update_vertex_positions(irb, Eigen::Map<const Eigen::VectorXd>(V_rb.data(), 3*V_rb.cols()));
-    }
 
+        //add collision spring points with still geometry
+        collision_points.clear();
+        Eigen::Vector6d dV_collide;
+        for(unsigned int mi=0; mi<moving_geometry.size(); ++mi) {
+            for(unsigned int si=0; si<still_geometry.size(); ++si){
+                std::cout<<"checking collision"<<std::endl;
+                collision_detection(collision_points, mi, si, 
+                                    q, still_geometry[si].first, still_geometry[si].second);
+            }
+        }
+
+        // std::cout<<collision_points.size()<<std::endl;
+        // if(collision_points.size()>0){
+        //     std::cout<<"colliding points:"<<std::endl;
+        //     std::cout<<"p1:"<<std::endl;
+        //     std::cout<<moving_geometry[0].first.row(collision_points[0].second)<<std::endl;
+        //     std::cout<<"ps:"<<std::endl;
+        //     std::cout<<collision_points[0].first<<std::endl;
+        //     std::exit(1);
+        // }
+
+        //add collision spring points between moving geometries 
+        auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
+        {
+            f = -gravity;
+
+            //dragging force
+            // for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
+            // {
+            //     //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+            //     dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+            //     std::cout<<"q1:"<<spring_points[pickedi].first<<std::endl;
+            //     std::cout<<"q2:"<<(q2 + x0).segment<3>(spring_points[pickedi].second)<<std::endl;
+            //     f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+            //     std::cout<<"force:"<<std::endl;
+            //     std::cout<<dV_mouse.segment<3>(3)<<std::endl;
+            // }
+
+            //collision force
+            for (unsigned int ci = 0; ci < collision_points.size(); ci++)
+            {
+                //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+                dV_spring_particle_particle_dq(dV_collide, collision_points[ci].first, (q2 + x0).segment<3>(3 * collision_points[ci].second), 0.0, k_collision);
+                std::cout<<"q1:"<<collision_points[ci].first<<std::endl;
+                std::cout<<"q2:"<<(q2 + x0).segment<3>(3 * collision_points[ci].second)<<std::endl;
+                f.segment<3>(3 * collision_points[ci].second) += dV_collide.segment<3>(3);
+                std::cout<<"added force:"<<std::endl;
+                std::cout<<dV_collide.segment<3>(3)<<std::endl;
+                std::cout<<"current force:"<<std::endl;
+                std::cout<<f.segment<3>(3 * collision_points[ci].second)<<std::endl;
+            }
+            //std::cout<<"here"<<std::endl;
+            //std::cout<<gravity.rows()<<std::endl;
+            //std::cout<<P.rows()<<std::endl;
+            f = P * f;
+            //std::cout<<"here2"<<std::endl;
+        };
+
+        meshless_implicit_euler(q, qdot, dt, mass, V, center_of_mass, force, tmp_force);
+    }
 }
 
-bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifiers) {
+inline void draw(Eigen::Ref<const Eigen::VectorXd> q, Eigen::Ref<const Eigen::VectorXd> qdot, double t)
+{
+    //update vertex positions using simulation
+    Visualize::update_vertex_positions(0, P.transpose() * q + x0);
+}
 
-    if(key == 'R') {
-        //reset the simulation
-        forces.setZero();
-        init_state_rigid_bodies(*q_ptr, *qdot_ptr,geometry.size());
-        qdot_ptr->segment<3>(0) << 0.1, 0.1, 0.0;
-    } 
-
-    if(key == 'S') {
+bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifiers)
+{
+    if (key == 'N')
+    {
+        std::cout << "toggle integrators \n";
+        //fully_implicit = !fully_implicit;
+    }
+    if (key == 'C')
+    {
+        collision_detection_on = !collision_detection_on;
+        Visualize::set_visible(1, collision_detection_on);
+    }
+    if (key == 'Q'){
+        std::exit(1);
+    }
+    if (key == 'P'){
         simulation_pause = !simulation_pause;
     }
-
     return false;
 }
 
-inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::VectorXd &qdot) {
+inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::VectorXd &qdot)
+{
+    //load moving geometry data
+    igl::readOBJ("../data/cube.obj", V, F);
+    //setup simulation
+    init_state(q, qdot, V);
 
-    q_ptr = &q;
-    qdot_ptr = &qdot; 
-
-    //setup the floor 
-    floor_normal << 0.7, 0.7, 0.;
-    floor_pos << 0. , -0.1, 0.;    
-
-    //load geometric data 
-    Eigen::MatrixXd V;
-    Eigen::MatrixXi F;
-    igl::readOBJ("../data/torus.obj", V, F);
-
-    std::cout<<F.cols()<<"\n";
-
-    geometry.push_back(std::make_pair(V,F));
-
-    //some forces to show the integrator works 
-    forces.resize(6*geometry.size());
-    forces.setZero();
-
-    //setup simulation 
-    init_state_rigid_bodies(q,qdot,geometry.size());
-
-    Eigen::Matrix3d inertia;
-    Eigen::Matrix66d mass_matrix;
-    double mass = 0;
-    Eigen::Vector3d com;
-    Eigen::Vector3d gravity;
-    gravity << 0., -0.98, 0.;
-
-    for(unsigned int irb=0; irb < geometry.size(); ++irb) {
-        inertia_matrix(inertia, com, mass, geometry[irb].first, geometry[irb].second, density);
-        
-        mass_matrix.setZero();
-        mass_matrix.block(0,0,3,3) = inertia;
-        mass_matrix(3,3) = mass;
-        mass_matrix(4,4) = mass;
-        mass_matrix(5,5) = mass;
-
-        mass_matrices.push_back(mass_matrix);
-        
-        //inital angular velocity
-        qdot.segment<3>(6*irb) << 0.1, 0.1, 0.0;
-
-        //setup rigid bodies initial position in space 
-        q.segment<3>(RB_OFFSET*irb + RB_POS_OFFSET) = com;
-
-        forces.segment<3>(6*irb + 3) = mass_matrices[irb].block(3,3,3,3)*gravity;
-        N.resize(geometry[irb].first.rows(), geometry[irb].first.rows());
-        N.setIdentity();
-        Visualize::add_object_to_scene(geometry[irb].first, geometry[irb].second, geometry[irb].first, geometry[irb].second, N,Eigen::RowVector3d(244,165,130)/255.);
-
-        //fix up mesh
-        for(unsigned int jj=0; jj<geometry[irb].first.rows(); ++jj) {
-            geometry[irb].first.row(jj) -= com.transpose();
-        }
+    //add geometry to scene
+    V_skin = V;
+    F_skin = F;
+    N.resize(V.rows(), V.rows());
+    N.setIdentity();
+    Visualize::add_object_to_scene(V, F, V_skin, F_skin, N, Eigen::RowVector3d(244, 165, 130) / 255.);    
+    moving_geometry.push_back(std::make_pair(V, F));
+    
+    //mass matrix
+    mass_matrix_particles(M, q, mass);
+    if (M.rows() == 0)
+    {
+        std::cout<<"Mass matrix not implemented, exiting.\n";
+        exit(1);
     }
 
+    //constant gravity vector
+    gravity.resize(q.rows(), 1);
+    dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
+    //center of mass 
+    center_of_mass = V.colwise().mean();
+    // std::cout<<V<<std::endl;
+    // std::cout<<center_of_mass<<std::endl;
+
+    // //fix to the floor
+    //find_min_vertices(fixed_point_indices, V, 0.001);
+    // P.resize(q.rows(), q.rows());
+    // P.setIdentity();
+    //fixed_point_constraints(P, q.rows(), fixed_point_indices);
+    //x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
+    // //correct M, q and qdot so they are the right size
+    // q = P * q;
+    // qdot = P * qdot;
+    // M = P * M * P.transpose();
+
+    //not fixed to the floor 
+    P.resize(q.rows(), q.rows());
+    P.setIdentity();
+    x0.resize(q.size());
+    x0.setZero();
+
     //add floor
+    Eigen::Vector3d floor_normal;
+    Eigen::Vector3d floor_pos;
+    floor_normal << 0.7, 0.7, 0.;
+    floor_pos << 0., -3.0, 0.;    
     Eigen::MatrixXd V_floor;
     Eigen::MatrixXi F_floor;
     igl::readOBJ("../data/plane.obj", V_floor, F_floor);
-
+    V_floor *= 10.0; //make it bigger
     N.resize(V_floor.rows(), V_floor.rows());
     N.setIdentity();
-
     //rotate plane
     Eigen::Vector3d n0;
     n0 << 0, 1, 0;
     floor_normal.normalize();
     float angle = std::acos(n0.dot(floor_normal)) + 0.15;
     Eigen::Vector3d axis = n0.cross(floor_normal);
-
     Eigen::Matrix3d floor_R = Eigen::AngleAxisd(angle, axis).matrix();
-
     //translate plane
     for(unsigned int iv=0; iv<V_floor.rows(); ++iv) {
         Eigen::Vector3d rotated = floor_R*V_floor.row(iv).transpose();
         V_floor.row(iv) = (rotated + floor_pos + Eigen::Vector3d(0., -0.01, 0.)).transpose();
     }    
-
-    Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N,Eigen::RowVector3d(64,165,130)/255.);
+    Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N, Eigen::RowVector3d(64,165,130)/255.);
+    still_geometry.push_back(std::make_pair(V_floor, F_floor));
 
     Visualize::viewer().callback_key_down = key_down_callback;
+    std::cout<<"finished set up"<<std::endl;
 }
 
 #endif
-

@@ -1,8 +1,6 @@
-[![](https://github.com/dilevin/CSC2549-a6-rigid-body-contact/workflows/Build-CSC2549-Assignment-Six/badge.svg)](https://github.com/dilevin/CSC2549-a6-rigid-body-contact/actions)
-
 ## Introduction
 
-In this final assignment we will finally consider how to model contact between objects. Specifically we will adapt the unconstrained rigid body simulation from the [previous assignment](https://github.com/dilevin/CSC2549-a5-rigid-bodies/) to support contact resolution by solving a Linear Complimentarity Problem. 
+This assignment will give you the chance to implement a simple cloth simulation. We will leverage our new found expertise on [finite element methods](www.github.com/dilevin/CSC2549-a3-finite-elements-3d) to build a FEM cloth simulation. This simulation will use triangles, rather than tetrahedron as the finite elements and will use a principal stretch-based model for the cloth material. You will also implement your first contact response model, a simple velocity filter that can be bolted onto standard time integration schemes. 
 
 ### Prerequisite installation
 
@@ -13,13 +11,13 @@ Windows[³](#³windowsusers).
 We also assume that you have cloned this repository using the `--recursive`
 flag (if not then issue `git submodule update --init --recursive`). 
 
-**Note:** We only officially support these assignments on Ubuntu Linux 18.04 (the OS the teaching labs are running) and OSX 10.13 (the OS I use on my personal laptop). While they *should* work on other operating systems, we make no guarantees.  
+**Note:** We only officially support these assignments on Ubuntu Linux 18.04 (the OS the teaching labs are running) and OSX 10.13 (the OS I use on my personal laptop). While they *should* work on other operating systems, we make no guarantees. 
 
 **All grading of assignments is done on Linux 18.04**
 
 ### Layout
 
-All assignments will have a similar directory and file layout: 
+All assignments will have a similar directory and file layout:
 
     README.md
     CMakeLists.txt
@@ -85,7 +83,7 @@ Followed by:
 Your code should now run significantly (sometimes as much as ten times) faster. 
 
 If you are using Windows, then running `cmake ..` should have created a Visual Studio solution file
-called `a6-rigid-body-contact.sln` that you can open and build from there. Building the project will generate an .exe file.
+called `a4-cloth-simulation.sln` that you can open and build from there. Building the project will generate an .exe file.
 
 Why don't you try this right now?
 
@@ -93,178 +91,196 @@ Why don't you try this right now?
 
 Once built, you can execute the assignment from inside the `build/` using 
 
-    ./a6-rigid-body-contact
+    ./a4-cloth-simulation
 
-While running, you can unpause/pause the simulation by pressing 's' and reset the position of the rigid body by pressing `r`. 
+While running, you can activate or de-activate the collision sphere by pressing `c`. 
 
 ## Background 
 
-In this final assignment we will augment our previous rigid body integrator with a contact resolution mechanism based on the basic laws of contact mechanics. We will begin by describing the conditions to resolve single point contact, extend this to multi point contact and then to the rigid body regime. Finally we will explore a popular, iterative scheme for solving the contact equations, the projected Gauss-Seidel method. 
+In this assignment we will move from the simulation of volumetric objects to the simulation of thin sheets or thin shells. For thin objects, rather than discretize the volume with tetrahedra (as was done in [assignment 2](https://github.com/dilevin/CSC2549-a2-mass-spring-3d) and [assignment 3](https://github.com/dilevin/CSC2549-a3-finite-elements-3d)) we discretize the [medial surface](http://www.unchainedgeometry.com/medial.html)  of the cloth.  This surface takes the form of a two-dimensional (2d) [manifold](https://en.wikipedia.org/wiki/Manifold) embedded in (3d) space. While many of the concepts you have already learned will carry over to this assignment, the major confounding factor will be evaluating the material model for the cloth on this manifold. To make things more interesting, we will see our first material model expressed in terms of the "principal stretches" of the deformation. 
 
-![Fun with contacting rigid bodies](images/rb_contact.gif)
+In order to allow for more interesting interactions with the cloth, we will also implement collision detection and resolution with an analytical sphere. We will implement a simple collision resolution scheme, via velocity filter. These algorithms try to prevent collisions by "filtering" a previously computed velocity to remove any components that might make collisions worse. While running the assignment code, you can activate or de-activate the collision sphere by pressing `c`. 
+
+![Cloth simulation!](images/cloth.gif)
 
 ## Resources
 
-This [paper](https://animation.rwth-aachen.de/media/papers/2012-EG-STAR_Rigid_Body_Dynamics.pdf) provides a detailed overview of rigid body simulation with contact.
+Somewhat sadly, it is difficult to find a comprehensive resource for modern cloth simulation. However, there are a collection of seminal papers that are helpful to peruse. The first, [Large-Steps in Cloth Simulation](https://www.cs.cmu.edu/~baraff/papers/sig98.pdf) is widely recognized for introducing the linearly-implicit time integrator to graphics. While we won't deal with bending stiffness (think the difference between a Kleenex and a steel sheet), [Discrete quadratic curvature energies](https://www.sciencedirect.com/science/article/abs/pii/S0167839607000891) are still the state-of-the-art approach for triangle mesh cloth. Finally, modern cloth simulators rely on [aggressive remeshing schemes](https://dl.acm.org/citation.cfm?id=2366171) to capture detail while retaining performance. 
 
+## Finite Elements on Manifolds 
 
-## Single Point Contact 
-![single point contact](images/single_point_contact.gif)
+Our major challenge in this assignment arises from the difference in the dimensionality of the cloth material and the world (deformed) space (**NOTE:** I use the terms world and deformed space interchangeably). Cloth is locally two-dimensional (*2d*) while the world  is [*3d*](https://www.quora.com/What-are-all-of-Calvins-alter-egos).  What will be comforting is that, a relatively straight-forward application of the finite-element-method (FEM) will allow us to build a passable dynamic cloth simulator. 
 
-The image above illustrates the most basic setup for a contact problem. It contains a single circular object (blue disk) resting on an infinite plane (black line). There is a single point of contact between these two objects (the contact point <img src="/tex/da278ee0789447cfaae0380d4cda2fdb.svg?invert_in_darkmode&sanitize=true" align=middle width=8.40178184999999pt height=14.611878600000017pt/>) and associated with this contact point is a shared surface normal (<img src="/tex/b56595d2a30a0af329086562ca12d521.svg?invert_in_darkmode&sanitize=true" align=middle width=10.502226899999991pt height=14.611878600000017pt/>). Contact mechanics addresses the question of how two such physical objects will behave when they come into contact. 
+## Triangular Finite Elements 
 
-Imagine the following scenario, our disk is falling under gravity and we've managed to take a snapshot of it just as it makes contact with our plane, but before the contact has any effect. In classical mechanics, no two pieces of matter can occupy the same region of space, our goal is to figure out how we can prevent that from happening -- how we can prevent the disc from falling through the plane. 
+The previous assignment applied FEM to *volumetric* simulation -- the simulation of objects with geometry of dimension equal to that of the world space (i.e our bunny and armadillo were 3d as was the world). In this case our finite elements were also volumetric ... they were tetrahedra in the undeformed space of the simulated object. 
 
-Since this is a physics problem we cannot directly manipulate the positions of the disk, rather all interactions happen through forces acting on either the volume (like gravity) or surface of both objects. This is a consequence of Newton's first law (objects in motion remain in motion unless influenced by an external force). We want to choose these forces so that the push the contacting objects away from each other (back into empty space, sometimes called the feasible space). To do this we are going to define a set of rules that will govern such contact mediated interactions. 
+In the case of cloth, the underformed  geometry is of different dimension (2d) than the world space (3d). Because our finite elements divide up the undeformed space, they also need to be 2d. As such we will use [triangles](https://en.wikipedia.org/wiki/Triangle), not tetrahedra as our elements.
 
-To begin, let's consider where our correcting force will come from. It arises as a consequence of Newton's third law, as the disc pushes on the floor, the floor pushes on the disc. From this arises our first rule of contact mechanics -- that the correcting force, actually the **contact force**, is only non-zero when objects are in contact. 
+## Generalized Coordinates and Velocities 
 
-Now that we've defined when the contact force can be applied, we can further define its properties. The most important property of a contact force is that it cannot "pull" the contacting objects back together (its not sticky). This means that locally, the contact force needs to push the objects apart along the normal direction. Finally we need to ensure that the objects are  no longer on a collision course after applying the contact force. 
+Just as in the [previous assignment](https://github.com/dilevin/CSC2549-a3-finite-elements-3d), we need to choose basis, or shape functions with which to approximate functions on our, now triangular, mesh. A triangle as 3 nodes our approximations become
 
-Let's try to define these conditions mathematically for a single point contacting a plane. Furthermore let's assume the plane is fixed in space and cannot move no matter how hard the disk pushes on it.  First, let's define our contact force. Since the force has to push our disk away from the floor, it has to have a component acting normal to the contact point. In fact, any force pushing in any other direction is doing nothing to resolve the potential contact. This implies that a reasonable definition of the contact force acting on the disk is <img src="/tex/03dea39ef18060d787da8c65a8aed874.svg?invert_in_darkmode&sanitize=true" align=middle width=56.22460304999999pt height=22.831056599999986pt/>, where <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> is a scalar. By definition this force acts normal to the contact surface. For the force to pull the disk towards the plane, it has to act in the opposite of the normal direction. To prevent this we can add the constraint <img src="/tex/781400a92cac6b7af3ef9ab783d03712.svg?invert_in_darkmode&sanitize=true" align=middle width=53.49877169999999pt height=21.18721440000001pt/>.  Next, we need to make sure this force is only applied when the disk is in contact with the object. Let's create a new function <img src="/tex/58b92fa639e63c027eb5ec58a62a56d4.svg?invert_in_darkmode&sanitize=true" align=middle width=32.48283554999999pt height=24.65753399999998pt/> which computes the [signed distance](https://en.wikipedia.org/wiki/Signed_distance_function) between the two objects at the contact point, <img src="/tex/da278ee0789447cfaae0380d4cda2fdb.svg?invert_in_darkmode&sanitize=true" align=middle width=8.40178184999999pt height=14.611878600000017pt/>. If the objects are in contact then <img src="/tex/a561c9ace81b9b2621c9a73d14b39426.svg?invert_in_darkmode&sanitize=true" align=middle width=38.69280359999998pt height=22.831056599999986pt/> if the disk passes into the plane, <img src="/tex/815fd9129ec271db15b23d2d230f9a67.svg?invert_in_darkmode&sanitize=true" align=middle width=38.69280359999998pt height=22.831056599999986pt/> and if the disc is not contacting the surface <img src="/tex/3e93ba65b33deaea4f4403dd4a07c14f.svg?invert_in_darkmode&sanitize=true" align=middle width=38.69280359999998pt height=22.831056599999986pt/>. Let's assume we are constraining our problem such that <img src="/tex/e139eaa881043a671cb9059709a44663.svg?invert_in_darkmode&sanitize=true" align=middle width=51.47823779999998pt height=22.831056599999986pt/>, then we can only apply the contact force when <img src="/tex/6a1084d56bbb789d6017da77ba2ee276.svg?invert_in_darkmode&sanitize=true" align=middle width=38.69280359999998pt height=22.831056599999986pt/>. This means that for each contact point either <img src="/tex/a561c9ace81b9b2621c9a73d14b39426.svg?invert_in_darkmode&sanitize=true" align=middle width=38.69280359999998pt height=22.831056599999986pt/> or <img src="/tex/2c2244dc5de6df9a1e9ef4a908994852.svg?invert_in_darkmode&sanitize=true" align=middle width=70.48517354999998pt height=22.831056599999986pt/>. If we compute <img src="/tex/a9e7c4cb5b87ff1b4ff005c76146fcac.svg?invert_in_darkmode&sanitize=true" align=middle width=31.00445039999999pt height=22.831056599999986pt/> it will always be 0. This is called a [complimentarity](https://en.wikipedia.org/wiki/Complementarity_theory) condition and it is a kind of orthogonality condition. Accordingly we write this as <img src="/tex/7418c1739ad7e18780764989880a3f1b.svg?invert_in_darkmode&sanitize=true" align=middle width=41.05009919999999pt height=22.831056599999986pt/>.  These collected constraints,
+<p align="center"><img src="images/1767c7f7922c97563d66b8446ba75840.svg?invert_in_darkmode" align=middle width=147.58684215pt height=47.35857885pt/></p> 
 
-<p align="center"><img src="/tex/e622bf17c5bd5ce90aad0d474bda1815.svg?invert_in_darkmode&sanitize=true" align=middle width=92.75453879999999pt height=73.78996185pt/></p>
+where <img src="images/c83e439282bef5aadf55a91521506c1a.svg?invert_in_darkmode" align=middle width=14.44544309999999pt height=22.831056599999986pt/> are the [barycentric coordinates](https://en.wikipedia.org/wiki/Barycentric_coordinate_system) for a 2D triangle and <img src="images/58c2313bc1ea66cc4d86d27f83c1941d.svg?invert_in_darkmode" align=middle width=55.34000504999999pt height=26.76175259999998pt/> is the 2d coordinate in the undeformed space. 
 
-are a form of the [**Signorini Conditions**](https://en.wikipedia.org/wiki/Signorini_problem) which arise in all manner of contact problems. 
+However, cloth is really a thin volumetric construct, of which our triangle only represents a small part. We might need information lying slightly off the triangle surface. To account for this we will need to modify our FEM model a bit. First, let's assume our triangle is actually embedded in a 3D undeformed space <img src="images/7c7c6fbc6e734e01d65098befa8bd28f.svg?invert_in_darkmode" align=middle width=54.86741699999999pt height=26.76175259999998pt/>. Let's try and and build and appropriate mapping from this space to the world space. 
 
-## Multi Point Contact and the Equations of Motion 
+Given any point <img src="images/d05b996d2c08252f77613c25205a0f04.svg?invert_in_darkmode" align=middle width=14.29216634999999pt height=22.55708729999998pt/> in the undeformed space, we can compute the barycentric coordinates of the nearest point on our triangle by solving
 
-![multi point contact](images/multi_point_contact.gif)
+<p align="center"><img src="images/79361f938b80de1c32bb7d7724ce3590.svg?invert_in_darkmode" align=middle width=249.66638894999997pt height=39.452455349999994pt/></p>,
 
-Now that we have a mathematical model for a single contact point, let's extend it to multiple points. Let's imagine we have a **collison detector** which will check for collisions between all objects in our scene and return a list of collision points, collision normals and a pair of object identifiers for each contact. In the general case, when neither object in the contacting pair is fixed, we must consider the effect of the contact force on both participating bodies.  For this <img src="/tex/19957acc3e1071d1174e0b50710e50cb.svg?invert_in_darkmode&sanitize=true" align=middle width=21.02943809999999pt height=27.91243950000002pt/> contact we get 
+where <img src="images/df63751855fcec904c3e28f701952a87.svg?invert_in_darkmode" align=middle width=216.36369974999994pt height=27.94539330000001pt/> is a matrix of edge vectors. We use the constriaint <img src="images/aba2578ca1be0bea64b5de8519cf7b12.svg?invert_in_darkmode" align=middle width=121.82623199999999pt height=22.831056599999986pt/> to reconstruct <img src="images/fdacaa2009a566aee165e36a976fa9cd.svg?invert_in_darkmode" align=middle width=16.34709119999999pt height=22.831056599999986pt/>. This equation finds the barycentric coordinates of the nearest point on the triangle to <img src="images/d05b996d2c08252f77613c25205a0f04.svg?invert_in_darkmode" align=middle width=14.29216634999999pt height=22.55708729999998pt/> in a least squares fashion. The error in this least squares solve will be orthogonal to the column space of <img src="images/2f118ee06d05f3c2d98361d9c30e38ce.svg?invert_in_darkmode" align=middle width=11.889314249999991pt height=22.465723500000017pt/>, our triangle. For any point <img src="images/d05b996d2c08252f77613c25205a0f04.svg?invert_in_darkmode" align=middle width=14.29216634999999pt height=22.55708729999998pt/> we can work out its offset from the triangle by computing <img src="images/ca2d7f8fc10bcbce38360119af40ad8e.svg?invert_in_darkmode" align=middle width=93.98546024999999pt height=27.6567522pt/>, where <img src="images/e846e5631eca1fe2f735605515f5be61.svg?invert_in_darkmode" align=middle width=20.84471234999999pt height=22.55708729999998pt/> is the first vertex of our triangle and <img src="images/bccab73005d96290c8ef588703533a21.svg?invert_in_darkmode" align=middle width=14.794451099999991pt height=22.55708729999998pt/> is the undeformed surface normal of the triangle. Because our triangle has a constant normal, we don't need to worry about where we compute it, which makes this all very convenient. 
 
-<p align="center"><img src="/tex/404c18b7a22883735caf687b5285def6.svg?invert_in_darkmode&sanitize=true" align=middle width=180.35016944999998pt height=98.89918334999999pt/></p> 
+Let's assume that our point <img src="images/d05b996d2c08252f77613c25205a0f04.svg?invert_in_darkmode" align=middle width=14.29216634999999pt height=22.55708729999998pt/> maintains a constant offset from the triangle when deformed. This implies we can reconstruct the world space position by offsetting our point the same distance along the world space normal <img src="images/b56595d2a30a0af329086562ca12d521.svg?invert_in_darkmode" align=middle width=10.502226899999991pt height=14.611878600000017pt/>. This gives us the following mapping from reference space to world space 
 
-where <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/> and <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/> index the two objects involved in this collision. <img src="/tex/c26f66007cb589124adc6bc0d9305a04.svg?invert_in_darkmode&sanitize=true" align=middle width=71.48954174999999pt height=24.65753399999998pt/> measures the distance, in world space, between the contact point on object <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/> and the contact point on object <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/>. As we move object <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/> and <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/> around to try and solve this problem,the contact point <img src="/tex/f93ce33e511096ed626b4719d50f17d2.svg?invert_in_darkmode&sanitize=true" align=middle width=8.367621899999993pt height=14.15524440000002pt/> will no longer be a single point, rather it will become two points, one attached to each object. Typically we compute this by mapping the original <img src="/tex/f93ce33e511096ed626b4719d50f17d2.svg?invert_in_darkmode&sanitize=true" align=middle width=8.367621899999993pt height=14.15524440000002pt/> to the undeformed space of each object, then mapping it back to the world space as the objects move. We compute <img src="/tex/2103f85b8b1477f430fc407cad462224.svg?invert_in_darkmode&sanitize=true" align=middle width=8.55596444999999pt height=22.831056599999986pt/> on these new, separate points. Finally, notice that our contact forces are setup to ensure that an equal and opposite force is applied to each object at the contact point.  Each contact introduces a new set of forces on some object <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/> and some object <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/>, along with the appropriate complimentarity constraints. 
+<p align="center"><img src="images/e9c52417462e27805f522b91127f71ab.svg?invert_in_darkmode" align=middle width=369.53043929999995pt height=47.35857885pt/></p>.
 
-## The Equations of Motion for a Single Rigid Body with Multiple Contacts 
+Now we can choose the **generalized coordinates** (<img src="images/84a62034abeb6bfffada277b45a096c7.svg?invert_in_darkmode" align=middle width=50.55236834999999pt height=26.76175259999998pt/>) to be the stacked vector of vertex positions, which defines the **generalized velocities** as the stacked *9d* vector of per-vertex velocities. 
 
-Now that we have a mathematical model for contact forces, we need to combine them with our equations of motion. Since we are simulating rigid bodies, those equations will be the Newton-Euler Equations. Let's make life a little bit easier by considering only a single rigid body, colliding with fixed objects in the scene. The equations of motion tell us that inertial forces need to balance all other external forces acting on the object. The sum of all contact forces acting on a single rigid body is given by 
+## Deformation Gradient 
 
-<p align="center"><img src="/tex/74c4515ebe7f646c3cf523ad0f8b6ab5.svg?invert_in_darkmode&sanitize=true" align=middle width=114.39249524999998pt height=36.16460595pt/></p> 
+There are lots of ways to handle build a cloth deformation gradient in [literature](https://animation.rwth-aachen.de/media/papers/2013-CAG-AdaptiveCloth.pdf). In this assignment we will be able to avoid these more complicated solution due to our particular choice of undeformed to world space mapping which allows us to directly compute a <img src="images/9f2b6b0a7f3d99fd3f396a1515926eb3.svg?invert_in_darkmode" align=middle width=36.52961069999999pt height=21.18721440000001pt/> deformation gradient as 
 
-where the <img src="/tex/f62db12f95e34116f1f1e827b2c64ce5.svg?invert_in_darkmode&sanitize=true" align=middle width=12.785434199999989pt height=19.1781018pt/> depends on whether the object is <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/> or <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/> in the collision pair. Now <img src="/tex/216f21f26c666c9b7407232b4084fa06.svg?invert_in_darkmode&sanitize=true" align=middle width=11.65087769999999pt height=22.831056599999986pt/> is a world space force in <img src="/tex/9e32a55e4e809956cef5fff14c39b80d.svg?invert_in_darkmode&sanitize=true" align=middle width=20.484113099999988pt height=26.76175259999998pt/>. We know that to convert this to a rigid body force (a torque and a center-of-mass force) we need to multiply by the transpose of the rigid body jacobian <img src="/tex/169657c6bf8366cfc815200cb738dc94.svg?invert_in_darkmode&sanitize=true" align=middle width=70.32646334999998pt height=26.76175259999998pt/>, evaluated at the appropriate undeformed point <img src="/tex/f73961fbdccf4a0a52e926e49663cb52.svg?invert_in_darkmode&sanitize=true" align=middle width=11.55245024999999pt height=22.55708729999998pt/>. Here <img src="/tex/f73961fbdccf4a0a52e926e49663cb52.svg?invert_in_darkmode&sanitize=true" align=middle width=11.55245024999999pt height=22.55708729999998pt/> is the contact point <img src="/tex/da278ee0789447cfaae0380d4cda2fdb.svg?invert_in_darkmode&sanitize=true" align=middle width=8.40178184999999pt height=14.611878600000017pt/> transformed from world into undeformed space (i.e you need to apply the inverse of the rigid body transform). This gives us the following constrained equations of motion
+<p align="center"><img src="images/985383447914a70e21e1b46c8b075b81.svg?invert_in_darkmode" align=middle width=368.00814599999995pt height=69.04177335pt/></p>
 
-<p align="center"><img src="/tex/a4b764bb0277cd7bc333becc6943e6fe.svg?invert_in_darkmode&sanitize=true" align=middle width=493.68470579999996pt height=42.8221167pt/></p>
+## Kinetic Energy
 
-which we can write in matrix form as 
+Armed with the generalized velocities, the formula for the per-triangle kinetic energy is eerily similar to that of assignment 3. It's an integral of the local kinetic energy over the entire triangle, multiplied by the thickness of the cloth, <img src="images/2ad9d098b937e46f9f58968551adac57.svg?invert_in_darkmode" align=middle width=9.47111549999999pt height=22.831056599999986pt/>. For this assignment you are free to assume the thickness of the cloth is <img src="images/034d0a6be0424bffe9a6e7ac9236c0f5.svg?invert_in_darkmode" align=middle width=8.219209349999991pt height=21.18721440000001pt/>.
 
-<p align="center"><img src="/tex/d153e1f2cb34c2d6843d625b70299f99.svg?invert_in_darkmode&sanitize=true" align=middle width=386.8465887pt height=39.534552749999996pt/></p>
+<p align="center"><img src="images/6f6d7d2d59fa79786810222c5181b7c8.svg?invert_in_darkmode" align=middle width=405.99040349999996pt height=59.1786591pt/></p> 
 
-where <img src="/tex/ae44fa1818647ed39ba79b316ce5dd87.svg?invert_in_darkmode&sanitize=true" align=middle width=14.86294424999999pt height=22.55708729999998pt/> is a <img src="/tex/c14e38732950511e6cf4af9a6e34a1d2.svg?invert_in_darkmode&sanitize=true" align=middle width=96.0267528pt height=21.18721440000001pt/> matrix of stacked <img src="/tex/b56beee853be98ce01ab38dba54c009b.svg?invert_in_darkmode&sanitize=true" align=middle width=22.45836284999999pt height=27.6567522pt/> matrices, <img src="/tex/bccab73005d96290c8ef588703533a21.svg?invert_in_darkmode&sanitize=true" align=middle width=14.794451099999991pt height=22.55708729999998pt/> is a <img src="/tex/05c8e25e420a67b0cfc84c601cfddcb6.svg?invert_in_darkmode&sanitize=true" align=middle width=148.12652415pt height=21.18721440000001pt/> matrix where each column contains a single contact normal, and <img src="/tex/0c8edc55152aecfe6d318d888c21e812.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> is a <img src="/tex/0d8c9010b933336238a6fdbe69049339.svg?invert_in_darkmode&sanitize=true" align=middle width=59.497143749999985pt height=14.15524440000002pt/> vector of contact force magnitudes.  Using these matrix variables one can see that the remaining complimentarity conditions for this entire dynamic system become 
+and can be compute analytically using a symbolic math package. The per-element mass matrices for  every cloth triangle can then be *assembled* into the mass matrix for the entire mesh. 
 
-<p align="center"><img src="/tex/e77837c91e50df024fa1950dced1bd17.svg?invert_in_darkmode&sanitize=true" align=middle width=79.60056885pt height=51.510287399999996pt/></p>
+## Potential Energy
 
-where <img src="/tex/a1a0237b674867e56447da2abd68e758.svg?invert_in_darkmode&sanitize=true" align=middle width=10.502226899999991pt height=22.831056599999986pt/> returns a vector of distances, one for each contact and all inequalities apply component wise to the associated vectors. 
+For this assignment we will use a different type of material model to describe the elastic behaviour of the cloth. This is motivated by the fact that cloth is typically very resistant to stretching. For these materials, a linear stress-strain relationship is often desirable. Unfortunately, cloth triangles also rotate a lot (every time they fold-over for instance). Rotations are **NOT** linear and so a purely linear relationship will suffer from severe artifacts. To avoid this we will build a material model that only measures the in plane deformation of the cloth via its *principal stretches*. 
 
-## The Velocity Level Signorini Conditions
+### Principal Stretches
 
-The system of equations and inequalities above is difficult to solve -- there is a lot of nonlinearity hidden in the calculation of the distance function. One way to side step this is to linearize the equations and solve them at the velocity level. Let's look at how this is done for a single contact. 
+Recall that in the previous assignment we used the right Cauchy strain tensor (<img src="images/07640d208ac0851eb169c73b736e6bb1.svg?invert_in_darkmode" align=middle width=36.06344114999999pt height=27.6567522pt/>) to measure deformation and the rationale for using this was that it measures the squared deformed length of an arbitrary, infinitesimal line of material, <img src="images/fe4e62694c7a379a0b31c6aa14046dd0.svg?invert_in_darkmode" align=middle width=24.79439324999999pt height=22.831056599999986pt/>. In other words, <img src="images/3b6459009b4b915041dfd6286e7e0c2b.svg?invert_in_darkmode" align=middle width=175.45954964999999pt height=30.429319799999984pt/>.  Because <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/> is symmetric and positive definite, we can perform an [eigendecomposition](https://en.wikipedia.org/wiki/Eigendecomposition_of_a_matrix) such that <img src="images/357a3518901055dabec2b6272f82e942.svg?invert_in_darkmode" align=middle width=105.41439149999998pt height=27.6567522pt/> where <img src="images/a9a3a4a202d80326bda413b5562d5cd1.svg?invert_in_darkmode" align=middle width=13.242037049999992pt height=22.465723500000017pt/> is the orthogonal matrix of eigenvectors and <img src="images/b23332f99af850a48831f80dbf681ed6.svg?invert_in_darkmode" align=middle width=11.41554479999999pt height=22.465723500000017pt/> is the diagonal matrix of eigenvalues. This means we can think of this squared length as <img src="images/1e910408a8c30e48164f77629c847ebe.svg?invert_in_darkmode" align=middle width=130.26379905pt height=39.1051584pt/> where <img src="images/5cae4b0b649a9b8d2fe83816e5ea8db6.svg?invert_in_darkmode" align=middle width=94.87794195pt height=31.50689519999998pt/>. In other words, if we transform <img src="images/fe4e62694c7a379a0b31c6aa14046dd0.svg?invert_in_darkmode" align=middle width=24.79439324999999pt height=22.831056599999986pt/> just right, its deformation is completely characterized by <img src="images/b23332f99af850a48831f80dbf681ed6.svg?invert_in_darkmode" align=middle width=11.41554479999999pt height=22.465723500000017pt/>. 
 
-We begin by computing <img src="/tex/b8fdcd052fc5f1361b8d834d4e1e5c61.svg?invert_in_darkmode&sanitize=true" align=middle width=86.27741265pt height=28.92634470000001pt/> which can be conveniently computed as <img src="/tex/ef394074ea4c0b53feaff655cfb5445c.svg?invert_in_darkmode&sanitize=true" align=middle width=97.58313179999999pt height=27.94539330000001pt/>. Rather than solve the nonlinear complimentarity problem above, we will solve the following [linear complimentarity problem (LCP)](https://en.wikipedia.org/wiki/Linear_complementarity_problem)
+<img src="images/b23332f99af850a48831f80dbf681ed6.svg?invert_in_darkmode" align=middle width=11.41554479999999pt height=22.465723500000017pt/> are the eigenvalues of <img src="images/07640d208ac0851eb169c73b736e6bb1.svg?invert_in_darkmode" align=middle width=36.06344114999999pt height=27.6567522pt/> and also the squared [*singular values*](https://en.wikipedia.org/wiki/Singular_value_decomposition) of <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/>. We call these singular values of <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/> the [principal stretches](http://www.femdefo.org). They measure deformation independently of the orientation (or rotation/reflection) of the finite element. 
 
-<p align="center"><img src="/tex/a9b89f2a3a2c7a4d3987b03f0ba90abd.svg?invert_in_darkmode&sanitize=true" align=middle width=166.60719569999998pt height=59.342801099999996pt/></p>
+### Linear Elasticity without the Pesky Rotations
 
-Now we need a way to relate <img src="/tex/5054c8a0cbac06dcee5cb54477c19a46.svg?invert_in_darkmode&sanitize=true" align=middle width=19.538760449999987pt height=33.089472899999976pt/> and <img src="/tex/dec6e10d5d5f1b585ca37c8ddf3daa5c.svg?invert_in_darkmode&sanitize=true" align=middle width=18.92003519999999pt height=33.089472899999976pt/> to <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>. Fortunately we already have such a set of equations, they are the discretized equations of motion from the [previous assignment](https://github.com/dilevin/CSC2549-a5-rigid-bodies/). We have already seen that, for the rigid body <img src="/tex/53d147e7f3fe6e47ee05b88b166bd3f6.svg?invert_in_darkmode&sanitize=true" align=middle width=12.32879834999999pt height=22.465723500000017pt/>.
+Now we can formulate a linear elastic model using the principal stretches which "filters out" any rotational components. Much like the Neohookean material model, this model will have one energy term which measures deformation and one energy term that tries to preserve volume (well area in the case of cloth). We already know we can measure deformation using the principal stretches. We also know that the determinant of <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/> measures the change in volume of a 3D object. In the volumetric case this determinant is just the product of the principal stretches. 
 
-<p align="center"><img src="/tex/c7acaeb9412fa07632d90a2f0b24c807.svg?invert_in_darkmode&sanitize=true" align=middle width=660.7766121pt height=68.52087660000001pt/></p>
+<p align="center"><img src="images/3e365d0313ccf4a7bdc45ac83825ea92.svg?invert_in_darkmode" align=middle width=378.80470155pt height=47.35857885pt/></p>
 
-A little bit of rearranging gives 
+where <img src="images/fd8be73b54f5436a5cd2e73ba9b6bfa9.svg?invert_in_darkmode" align=middle width=9.58908224999999pt height=22.831056599999986pt/> and <img src="images/07617f9d8fe48b4a7b3f523d6730eef0.svg?invert_in_darkmode" align=middle width=9.90492359999999pt height=14.15524440000002pt/> are the material properties for the cloth. The first term in this model attempts to keep <img src="images/ac3148a5746b81298cb0c456b661f197.svg?invert_in_darkmode" align=middle width=14.25802619999999pt height=14.15524440000002pt/> and <img src="images/286f7d4815c0996530bda7973b1ec5ea.svg?invert_in_darkmode" align=middle width=14.25802619999999pt height=14.15524440000002pt/> close to one (limiting deformation) while the second term is attempting to preserve the volume of the deformed triangle (it's a linearization of the determinant). This model is called  **co-rotational linear elasticity** because it is linear in the principal stretches but rotates *with* each finite element. When we use energy models to measure the in-plane stretching of the cloth (or membrane), we often refer to them as membrane energies.  
 
-<p align="center"><img src="/tex/73fe574c8e0c46361055fb72b90329bb.svg?invert_in_darkmode&sanitize=true" align=middle width=268.00199250000003pt height=45.99263295pt/></p> 
+### The Gradient of Principal Stretch Models 
 
-where <img src="/tex/b1bfba17d7990fcf3f6f06fb783eaf9c.svg?invert_in_darkmode&sanitize=true" align=middle width=31.749943499999986pt height=26.76175259999998pt/> is the unconstrained velocity at time <img src="/tex/628783099380408a32610228991619a8.svg?invert_in_darkmode&sanitize=true" align=middle width=34.24649744999999pt height=21.18721440000001pt/> (exactly what we computed for the last assignment). So now we see that, for a single contact there's a relatively simple relationship between the contact force magnitude, <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>, and the resulting velocity.  Now we can use the rigid body jacobian to relate this to the velocity of the contact point, <img src="/tex/84f39dd90ae59db861a16dcfc66d956d.svg?invert_in_darkmode&sanitize=true" align=middle width=18.28769249999999pt height=27.6567522pt/>. At the end of each time step, the velocity of <img src="/tex/84f39dd90ae59db861a16dcfc66d956d.svg?invert_in_darkmode&sanitize=true" align=middle width=18.28769249999999pt height=27.6567522pt/> will be
+The strain energy density for principal stretch models, like the one above, are relatively easy to implement and understand. This is a big reason we like them in graphics. We'll also see that the gradient of this model (needed for force computation) is also pretty easy to compute.
 
-<p align="center"><img src="/tex/51bc86176aa9086a17082e7458332555.svg?invert_in_darkmode&sanitize=true" align=middle width=471.49214309999996pt height=24.2029623pt/></p>
+Really, the derivative we need to understand how to compute is <img src="images/9a05c8a8b310cb0d9f34636450b3d442.svg?invert_in_darkmode" align=middle width=17.83399365pt height=30.648287999999997pt/>. Once we have this we can use <img src="images/b38dda0a0c1ab15d9dae0b9b9e8aa1dc.svg?invert_in_darkmode" align=middle width=17.83399365pt height=28.92634470000001pt/> to compute the gradient wrt to the generalized coordinates.  Conveniently, we have the following for principal stretch models.
 
-Formula's for rigid body <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/> are analogous except rather than subtracting contact forces, we **add** them (equal and opposite :) ). 
+<p align="center"><img src="images/57d6ce76b81f64d9de86d723aaf06fcf.svg?invert_in_darkmode" align=middle width=215.32883955pt height=91.60788615pt/></p> 
 
-Because we can now express <img src="/tex/5054c8a0cbac06dcee5cb54477c19a46.svg?invert_in_darkmode&sanitize=true" align=middle width=19.538760449999987pt height=33.089472899999976pt/> and <img src="/tex/dec6e10d5d5f1b585ca37c8ddf3daa5c.svg?invert_in_darkmode&sanitize=true" align=middle width=18.92003519999999pt height=33.089472899999976pt/> directly as functions of <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>, and because these expressions encode the physical behaviour of our rigid body (via the equations of motion) we can now start to solve this complimentarity problem. Let's start by examining the inequality <img src="/tex/5730f5323a6207c98db1eb2306a699d4.svg?invert_in_darkmode&sanitize=true" align=middle width=140.50539855pt height=27.94539330000001pt/>. 
+where <img src="images/b93e9b71beaf724ff1d0f85841e9ae61.svg?invert_in_darkmode" align=middle width=81.59062395pt height=27.6567522pt/> is the singular value decomposition.
 
-We can now rephrase this inequality completely in terms of <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>, which looks like this
+### The Hessian of Principal Stretch Models
 
-<p align="center"><img src="/tex/1054a987266ec13bcfe457b93647e890.svg?invert_in_darkmode&sanitize=true" align=middle width=804.60862185pt height=53.5253565pt/></p>
+Unfortunately, the gradient of the principal stretch energy is not enough. That's because our favourite implicit integrators require second order information to provide the stability and performance we crave in computer graphics. This is where things get messy. The good news is that, if we can just compute <img src="images/5c09159163d9a8fe55c1a3016a3ad75a.svg?invert_in_darkmode" align=middle width=35.667965849999995pt height=30.648287999999997pt/> then we can use <img src="images/b38dda0a0c1ab15d9dae0b9b9e8aa1dc.svg?invert_in_darkmode" align=middle width=17.83399365pt height=28.92634470000001pt/>  to compute our Hessian wrt to the generalized coordinates (this follows from the linearity of the FEM formulation wrt to the generalized coordinates).  This formula is going to get ugly so, in an attempt to make it somewhat clear, we are going to consider derivatives wrt to single entries of <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/>, denoted <img src="images/a8c1f0c39cf12de6d64430cd9bc86046.svg?invert_in_darkmode" align=middle width=21.32620544999999pt height=22.465723500000017pt/>. In this context we are trying to compute
 
-Let's ignore the inequality and just find <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> such that <img src="/tex/e6b3034a18b1c4911dae98c96be4db52.svg?invert_in_darkmode&sanitize=true" align=middle width=127.71996434999998pt height=27.94539330000001pt/>. This is given by <img src="/tex/ffa93664b733c40892654f378056540a.svg?invert_in_darkmode&sanitize=true" align=middle width=54.86490569999999pt height=24.575218800000012pt/>. That's a very convenient way to find the magnitude of the contact force that will (linearly) pull our objects so that the distance between their contacting points is zero. The problem is we've ignored all the other parts of the LCP. 
+<p align="center"><img src="images/52999a1482045a0142d3cbd60a381afe.svg?invert_in_darkmode" align=middle width=393.63332085pt height=42.3143919pt/></p>
 
-One thing that we know is <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> must always be greater than, or equal to <img src="/tex/29632a9bf827ce0200454dd32fc3be82.svg?invert_in_darkmode&sanitize=true" align=middle width=8.219209349999991pt height=21.18721440000001pt/>, and it can only be non-zero if <img src="/tex/e6b3034a18b1c4911dae98c96be4db52.svg?invert_in_darkmode&sanitize=true" align=middle width=127.71996434999998pt height=27.94539330000001pt/>. One obvious thing to is compute our final contact force magnitude as 
+Here <img src="images/01f349799d08738b3ed7187a8adfa8b7.svg?invert_in_darkmode" align=middle width=45.662167649999994pt height=24.65753399999998pt/> takes a <img src="images/6018bf12266e0674a19d0a622989ad88.svg?invert_in_darkmode" align=middle width=36.52961069999999pt height=21.18721440000001pt/> vector as input and converts it into a diagonal matrix, with the entries of the matrix on the diagonal. In our case, we define <img src="images/0a36368a7b551a7c6aa055de5009bea3.svg?invert_in_darkmode" align=middle width=17.958806249999988pt height=22.831056599999986pt/> as 
 
-<p align="center"><img src="/tex/a7bdaa2a11a0b72a91e56488d2ea9ca7.svg?invert_in_darkmode&sanitize=true" align=middle width=127.14183075pt height=30.1801401pt/></p>
+<p align="center"><img src="images/57354dd3723345bfc2d7b2a89dd465a7.svg?invert_in_darkmode" align=middle width=301.91657265pt height=81.88967819999999pt/></p>
 
-This ensures <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> is always greater than zero. It also ensures this only happens when the gap between contact points is <img src="/tex/29632a9bf827ce0200454dd32fc3be82.svg?invert_in_darkmode&sanitize=true" align=middle width=8.219209349999991pt height=21.18721440000001pt/> (because that's wht we solved for). Interestingly, due to the structure of the <img src="/tex/38f1e2a089e53d5c990a82f284948953.svg?invert_in_darkmode&sanitize=true" align=middle width=7.928075099999989pt height=22.831056599999986pt/> term, one only gets a positive <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> when <img src="/tex/a89997741c635097e570db8a18d0bd29.svg?invert_in_darkmode&sanitize=true" align=middle width=140.50539855pt height=27.94539330000001pt/>. This means that contact forces are only applied when the objects are in contact or when one object is inside another (something which we should definitely correct for). Thus, this simple operation solves our single contact point LCP. Next we will use this as the building block of a multi-point contact handling algorithm.
+When looking at this formula **DON'T PANIC**. It's a straight forward application of the chain rule, just a little nastier than usual. Also remember that **I am giving you the code to compute SVD derivatives in dsvd.h/dsvd.cpp**.  
 
-## Solving the Multi-Point Contact Problem using Projected Gauss Seidel 
+If we define the svd of a matrix as <img src="images/b93e9b71beaf724ff1d0f85841e9ae61.svg?invert_in_darkmode" align=middle width=81.59062395pt height=27.6567522pt/>, this code returns <img src="images/bfdc1036a225b1cba16ea97fa96d82de.svg?invert_in_darkmode" align=middle width=110.94409754999998pt height=28.92634470000001pt/>, <img src="images/a0d1fd43ad34510636923359f83becfa.svg?invert_in_darkmode" align=middle width=111.34893495pt height=28.92634470000001pt/> and <img src="images/c019432b974b538f20a9d3cb38176a2d.svg?invert_in_darkmode" align=middle width=94.03493055pt height=28.92634470000001pt/>. Yes this code returns 3 and four dimensional tensors storing this quantities, yes I said never to do this in class, consider this the exception that makes the rule.  The latter two indices on each tensor are the <img src="images/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> and <img src="images/36b5afebdba34564d884d347484ac0c7.svg?invert_in_darkmode" align=middle width=7.710416999999989pt height=21.68300969999999pt/> indices used in the formula above. 
 
-With multiple points things get a little trickier, we need to somehow satisfy all our complimentarity conditions at once. One way of doing this is to solve a [quadratic program](https://en.wikipedia.org/wiki/Quadratic_programming) at the velocity level. It turns out that certain LCPs (like the one we solve) define the optimality criteria for quadratic programs and solving one is the same as solving the other. For this project we will **not** solve a QP, instead we will use an iterative method ([projected Gauss-Seidel](http://www.optimization-online.org/DB_FILE/2007/06/1675.pdf)) to directly solve the LCP. This approach is extremely popular in physics-based animation and well worth understanding.
+The hardest part of implementing this gradient correctly is handling the SVD terms. These gradients have a different form based on whether your <img src="images/b8bc815b5e9d5177af01fd4d3d3c2f10.svg?invert_in_darkmode" align=middle width=12.85392569999999pt height=22.465723500000017pt/> matrix is square or rectangular. This is one big reason that the <img src="images/9f2b6b0a7f3d99fd3f396a1515926eb3.svg?invert_in_darkmode" align=middle width=36.52961069999999pt height=21.18721440000001pt/> deformation gradient we use in this assignment is desirable. It allows one to use the same singular value decomposition code for volumetric and cloth models. 
 
-Let's imagine we have <img src="/tex/0d8c9010b933336238a6fdbe69049339.svg?invert_in_darkmode&sanitize=true" align=middle width=59.497143749999985pt height=14.15524440000002pt/> contact points. We can augment our contact modified, rigid body update equation with them in the following manner:
+## Collision Detection with Spheres
 
-<p align="center"><img src="/tex/32d8d160fa450388dcaa7abd150d52d2.svg?invert_in_darkmode&sanitize=true" align=middle width=328.4389119pt height=47.3426514pt/></p> 
+To make this assignment a little more visually interesting, you will implement simple collision detection and resolution with an analytical sphere. **Collision Detection** is the process of detecting contact between two or more objects in the scene and **Collision Resolution** is the process of modifying the motion of the object in response to these detected collisions.  
 
-We are going to use this equation to solve (and its counterpart for rigid bod <img src="/tex/61e84f854bc6258d4108d08d4c4a0852.svg?invert_in_darkmode&sanitize=true" align=middle width=13.29340979999999pt height=22.465723500000017pt/>) to solve the contact problem by iteratively updating our <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>'s one-at-a-time. We begin with an initial guess for each <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> (say <img src="/tex/29632a9bf827ce0200454dd32fc3be82.svg?invert_in_darkmode&sanitize=true" align=middle width=8.219209349999991pt height=21.18721440000001pt/>). The basic algorithm proceeds in the following manner (sorry about the non-processed latex, its a markdown thing that I cannot figure out).
+For this assignment we will implement per-vertex collision detection with the sphere. This is as simple as detecting if the distance from the center of the sphere to any vertex in your mesh is less than the radius of the sphere. If you detect such a collision, you need to store an **index** to the colliding vertex, along with the outward facing **contact normal**(<img src="images/b56595d2a30a0af329086562ca12d521.svg?invert_in_darkmode" align=middle width=10.502226899999991pt height=14.611878600000017pt/>). In this case, the outward facing contact normal is the sphere normal at the point of contact. 
 
-    iterations = 0
-    all $\alpha$ = 0
+## Collision Resolution 
 
-    While i < max iterations
-        
-        For c = 0 to number of contacts - 1
-             
-             Compute $\delta_c$ 
+The minimal goal of any collision resolution algorithm is to prevent collisions from getting worse locally. To do this we will implement a simple *velocity filter* approach. Velocity filters are so named because the "filter out" components of an objects velocity that will increase the severity of a collision. Given a vertex that is colliding with our sphere, the only way that the collision can get worse locally is if that vertex moves *into* the sphere. One way we can check if this is happening is to compute the projection of the vertex velocity onto the outward facing contact normal (<img src="images/82f2067d05c8a81659bc2b949d23b64a.svg?invert_in_darkmode" align=middle width=35.48583554999999pt height=27.6567522pt/>, <img src="images/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> selects the <img src="images/c36ef0ba4721f49285945f33a25e7a45.svg?invert_in_darkmode" align=middle width=20.92202969999999pt height=26.085962100000025pt/> contacting vertex). If this number is <img src="images/ea4bbf715156e61bd05c0ec553601019.svg?invert_in_darkmode" align=middle width=25.570741349999988pt height=21.18721440000001pt/> we are OK, the vertex is moving away from the sphere. If this number is <img src="images/1757afe2b054e59c6d5c465cf82bd885.svg?invert_in_darkmode" align=middle width=25.570741349999988pt height=21.18721440000001pt/> we better do something. 
 
-             Compute $\gamma_c$
+The thing we will do is project out, or filter out, the component of the velocity moving in the negative, normal direction like so:
 
-             Compute $alpha^{i}_c = \max(0,-frac{\gamma_c}{\delta_c})$
+<p align="center"><img src="images/870c98e8c4b120f06c7a15af3b02d6e7.svg?invert_in_darkmode" align=middle width=164.51989455pt height=22.2666345pt/></p>
 
-        End
-    
-    End
-
-The remaining goal is to come up with formulas for <img src="/tex/a0f4dc8e2aa4dd40aaa873397e83c252.svg?invert_in_darkmode&sanitize=true" align=middle width=14.05829699999999pt height=22.831056599999986pt/> and <img src="/tex/5e607c9771c90017b79d70770f507a75.svg?invert_in_darkmode&sanitize=true" align=middle width=15.262999949999992pt height=14.15524440000002pt/>.  We do this in a Gauss-Seidel fashion, by dividing the contact forces into three groups -- (1) forces that have been updated this iteration, (2) forces that have yet to be updated and (3) the contact we are currently solving for. With this grouping we arrive at a formula for rigid body velocity that looks like this:
-
-<p align="center"><img src="/tex/2d93fd570f2d761909caf506dafed4e0.svg?invert_in_darkmode&sanitize=true" align=middle width=770.1171026999999pt height=73.83572955pt/></p> 
-
-Note that <img src="/tex/c7f539fb243cda00c7bf9f47bc19e3d7.svg?invert_in_darkmode&sanitize=true" align=middle width=42.687501449999985pt height=27.6567522pt/> and <img src="/tex/3fa3feb50e746a701fbb01c9e97b8d60.svg?invert_in_darkmode&sanitize=true" align=middle width=42.50485469999999pt height=27.6567522pt/> can be computed using the values of <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> at this particular point in the contact point iteration. Solving for the updated <img src="/tex/971651e87c9aebb6ec102860c98ae161.svg?invert_in_darkmode&sanitize=true" align=middle width=16.390298099999992pt height=14.15524440000002pt/> is analogous to the single point case. For the contact, <img src="/tex/3e18a4a28fdee1744e5e3f79d13b9ff6.svg?invert_in_darkmode&sanitize=true" align=middle width=7.11380504999999pt height=14.15524440000002pt/>, we are currently visiting, we construct
-
-<p align="center"><img src="/tex/dd8618f5d568c7c6daf5937d96a4f009.svg?invert_in_darkmode&sanitize=true" align=middle width=561.6525667499999pt height=99.78292334999999pt/></p>
-
-We then compute <img src="/tex/1bd40ffd3f22f94d7a047f2d6999dabe.svg?invert_in_darkmode&sanitize=true" align=middle width=137.4183129pt height=37.80850590000001pt/>. The method gets its name due to the Gauss-Seidel like ordering of the <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/> updates and the projection of computed <img src="/tex/c745b9b57c145ec5577b82542b2df546.svg?invert_in_darkmode&sanitize=true" align=middle width=10.57650494999999pt height=14.15524440000002pt/>'s onto the set of positive, real numbers. 
-
-While this algorithm can be run to convergence, for interactive applications it is best to limit the number of outer iterations. In our case we will set the maximum number of outer iterations to be **10**. 
+This "fixes" the collision. This approach to collision resolution is fast but for more complicated scenes it is fraught with peril. For instance it doesn't take into account how it is deforming the simulated object which can cause big headaches when objects are stiff or rigid. We'll see a cleaner mathematical approach to content in the final assignment of the course.
 
 ## Assignment Implementation
 
-In this assignment you will adapt your previous, unconstrained rigid body integrator to handle contact using the projected Gauss-Seidel algorithm. The notes above assume the general case in which contact forces act on two objects which are both dynamic. In the assignment your contacts will happen with a fixed ground plane which cannot move. The ground plane will not be a simulated object. Rather you will modify your projected Gauss-Seidel solver to handle such fixed objects. One way to formulate this modification is to treat static objects as having infinite mass. In this way the inverse mass matrix is zero, meaning applied forces have no effect. If the objects initial velocity is zero, it will always be zero. 
+### Implementation Notes
 
-### rodrigues.cpp
+In this assignment you will reuse your linearly implicit integrator to time step the dynamic system. Also, we will eschew implementing the strain energy density function, quadrature rule and potential energies separately. Instead functions for potential energy and its derivatives should directly compute the integrated values for a triangular element.
 
-**Use code from previous assignment.**
+### dphi_cloth_triangle_dX.cpp
 
-### inverse_rigid_body.cpp
+Piecewise constant gradient matrix for linear shape functions. Row <img src="images/77a3b857d53fb44e33b53e4c8b68351a.svg?invert_in_darkmode" align=middle width=5.663225699999989pt height=21.68300969999999pt/> of the returned matrix contains the gradient of the <img src="images/3def24cf259215eefdd43e76525fb473.svg?invert_in_darkmode" align=middle width=18.32504519999999pt height=27.91243950000002pt/> shape function.
 
-A method to transform a point from world (deformed) space to body (undeformed) space. 
+### T_cloth.cpp
 
-### rigid_body_jacobian.cpp
+The kinetic energy of the whole cost mesh.
 
-**Use code from previous assignment.**
+###  dV_cloth_gravity_dq.cpp
 
-### inertia_matrix.cpp
+Gradient of potential energy due to gravity
 
-**Use code from previous assignment.**
+###  V_membrane_corotational.cpp
 
-### collision_box_floor.cpp
+Potential energy for the cloth stretching force
 
-Detect contact between a triangle mesh and an arbitrarily positioned plane.
+###  dV_membrane_corotational_dq.cpp
 
-### dV_spring_particle_particle_dq.cpp
+Gradient of the cloth stretching energy.
 
-**Use code from previous assignment.**
+###  d2V_membrane_corotational_dq2.cpp
 
-### exponential_euler_lcp_contact.h
+Hessian matrix of the cloth stretching energy
 
-Implement velocity level collision resolution using progressive Gauss-Seidel and exponential Euler time integration. 
+###  V_spring_particle_particle.cpp
 
-### pick_nearest_vertices.cpp
+**Use your code from the last assignment**
 
-**Use code from previous assignment.**
+###  dV_spring_particle_particle_dq.cpp
+
+**Use your code from the last assignment**
+
+###  mass_matrix_mesh.cpp
+
+Assemble the full mass matrix for the entire tetrahedral mesh.
+
+###  assemble_forces.cpp
+
+Assemble the global force vector for the finite element mesh.
+
+###  assemble_stiffness.cpp
+
+Assemble the global stiffness matrix for the finite element mesh.
+
+###  linearly_implicit_euler.h
+
+**Use your code from the last assignment**
+
+###  fixed_point_constraints.cpp
+
+**Use your code from the last assignment**
+
+###  collision_detection_cloth_sphere.cpp
+
+Detect if any mesh vertex falls inside a sphere centered at (0,0,0.4) with radius 0.22
+
+###  velocity_filter_cloth_sphere.cpp
+
+Project out components of the per-vertex velocities which are in the **positive** direction of the contact normal
+
+###  pick_nearest_vertices.cpp
+
+**Use your code from the last assignment**
+
 

@@ -14,28 +14,26 @@ double dt = 0.00001; //time step
 
 //simulation loop
 bool simulating = true;
-
 bool simulation_callback() {
+    
+    //simulate(q, qdot, dt, t);
+    //simulate(q, qdot, dt, t);
+    //simulate(q, qdot, dt, t);
 
     while(simulating) {
-        simulate(q, qdot, dt, t);
-        t += dt;
+      simulate(q, qdot, dt, t);
+       t += dt;
     }
-
     return false;
 }
 
-bool draw_callback(igl::opengl::glfw::Viewer &viewer) {
-    
+bool draw_callback(igl::opengl::glfw::Viewer &viewer) {   
     draw(q, qdot, t);
-
     return false;
 }
 
 void f(int &a, int b, int c) {
     a = b + c;
-
-
 }
 
 void g(Eigen::Vector3d &a, Eigen::Vector3d b, Eigen::Vector3d c) {
@@ -49,7 +47,7 @@ void h(Ret &&a, B b, C c, void (*func)(Ret, B, C)) {
 
 int main(int argc, char **argv) {
 
-    std::cout<<"Start A6\n";
+    std::cout<<"Start Meshless Deformation...\n";
 
     //assignment specific setup
     assignment_setup(argc, argv, q, qdot);
@@ -62,7 +60,5 @@ int main(int argc, char **argv) {
     Visualize::setup(q, qdot, true);
     Visualize::viewer().callback_post_draw = &draw_callback;
     Visualize::viewer().launch();
-
     return 1; 
-
 }

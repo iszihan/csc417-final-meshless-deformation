@@ -8,7 +8,6 @@ bool pick_nearest_vertices(std::vector<unsigned int> &verts, Eigen::Ref<const Ei
                            Eigen::Ref<const Eigen::Matrix44f> view, Eigen::Ref<const Eigen::Matrix44f> proj, Eigen::Vector4f viewport,
                            Eigen::Ref<const Eigen::MatrixXd> V, Eigen::Ref<const Eigen::MatrixXi> F, double radius) {
 
-
     
     verts.clear();
 
@@ -58,5 +57,4 @@ bool pick_nearest_vertices(std::vector<unsigned int> &verts, Eigen::Ref<const Ei
     //std::cout<<"picked vertices size"<<verts.size()<<std::endl;
 
     return (verts.size() == 0 ? false : true);
-
 }

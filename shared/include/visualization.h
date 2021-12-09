@@ -33,6 +33,8 @@ namespace Visualize {
     void add_object_to_scene(const Eigen::MatrixXd &V, const Eigen::MatrixXi &F, const Eigen::MatrixXd &V_skin, 
                              const Eigen::MatrixXi &F_skin,  const Eigen::SparseMatrixd &N, Eigen::RowVector3d color);
     
+    void set_visible(unsigned int obj_id, bool visible);
+
     //animate geometry using physics simulation
     void rigid_transform_1d(unsigned int id, double x);
 
@@ -63,8 +65,6 @@ namespace Visualize {
     bool is_mouse_dragging();
 
     void toggle_skinning(bool skinning);
-
-    const Eigen::MatrixXd & geometry(unsigned int id);
 }
 
 

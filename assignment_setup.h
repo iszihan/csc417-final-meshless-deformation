@@ -1,7 +1,6 @@
 #ifndef ASSIGNMENT_SETUP_H
 #define ASSIGNMENT_SETUP_H
 
-//Assignment 4 code
 #include <igl/readMESH.h>
 #include <igl/readOBJ.h>
 #include <igl/writeOBJ.h>
@@ -15,25 +14,13 @@
 #include <init_state.h>
 #include <find_min_vertices.h>
 #include <fixed_point_constraints.h>
-
 #include <mass_matrix_particles.h>
 #include <meshless_implicit_euler.h>
-#include <dsvd.h>
-
-#include <dphi_cloth_triangle_dX.h>
-#include <T_cloth.h>
-#include <V_membrane_corotational.h>
-#include <dV_membrane_corotational_dq.h>
-#include <d2V_membrane_corotational_dq2.h>
 #include <dV_cloth_gravity_dq.h>
-#include <V_spring_particle_particle.h>
 #include <dV_spring_particle_particle_dq.h>
-#include <assemble_forces.h>
-#include <assemble_stiffness.h>
 
 //collision detection stuff
 #include <collision_detection.h>
-#include <velocity_filter_cloth_sphere.h>
 
 //Variable for geometry
 Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets

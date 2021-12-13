@@ -310,7 +310,6 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
 
         Visualize::g_viewer.core().background_color.setConstant(1.0);
         Visualize::g_viewer.core().is_animating = true;
-        std::cout<<"here"<<std::endl;
 
     }
 

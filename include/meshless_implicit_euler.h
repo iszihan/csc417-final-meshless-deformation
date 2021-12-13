@@ -19,7 +19,7 @@ template<typename FORCE>
 inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double mass,
                                     Eigen::MatrixXd &V0, const Eigen::Vector3d &center_of_mass0,
                                     FORCE &force, Eigen::VectorXd &tmp_force) {
-    std::cout<<"inside meshless update function"<<std::endl;
+    //std::cout<<"inside meshless update function"<<std::endl;
 
     //gather forces
     force(tmp_force,q,qdot);

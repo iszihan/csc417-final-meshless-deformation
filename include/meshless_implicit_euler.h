@@ -15,92 +15,165 @@
 //Output:
 //  q - set q to the updated generalized coordinate using linearly implicit time integration
 //  qdot - set qdot to the updated generalized velocity using linearly implicit time integration
+
+
+//TODO:
+// - clustering 
+// - linear and quadratic 
 template<typename FORCE> 
 inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double mass,
-                                    Eigen::MatrixXd &V0, const Eigen::Vector3d &center_of_mass0,
+                                    Eigen::SparseMatrixd &P, Eigen::VectorXd &x0,
+                                    Eigen::MatrixXd &_Q, std::vector<std::vector<int>> clusters, int method,
                                     FORCE &force, Eigen::VectorXd &tmp_force) {
-    //std::cout<<"inside meshless update function"<<std::endl;
-
     //gather forces
     force(tmp_force,q,qdot);
     
-    //update without the goal position fitting
+    //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
     Eigen::VectorXd q_tmp = q + dt * qdot_tmp;
-    //Eigen::VectorXd q2_tmp = q + dt * qdot_tmp;
-    // q2_tmp(18) = q(18);
-    // q2_tmp(19) = q(19);
-    // q2_tmp(20) = q(20);
-    // q_tmp = q2_tmp;
+    //keep fixed points unchanged
+    q_tmp = P * q_tmp + x0;
 
-    //compute goal positions
-    //get current center of mass
-    Eigen::Vector3d center_of_masst;
-    Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q_tmp.data(),3,q_tmp.rows()/3);
-    center_of_masst = Vt.transpose().colwise().mean();
-    
-    // std::cout<<center_of_masst<<std::endl;
-    // if(isnan(center_of_masst(0))){
-    //     std::exit(1);
+    if(clusters.size()==1){
+        //compute goal positions
+        //get current center of mass
+        Eigen::Vector3d center_of_masst;
+        Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q_tmp.data(),3,q_tmp.rows()/3);
+        center_of_masst = Vt.transpose().colwise().mean();
+
+        //get p: vertex position relative to current CoM 
+        Eigen::MatrixXd _P = Vt.transpose().rowwise() - center_of_masst.transpose();
+        Eigen::Matrix3d Aqq = (mass * _Q.transpose() * _Q).inverse(); // 3 x 3
+        Eigen::Matrix3d Apq = mass * _P.transpose() * _Q; // 3 x 3 
+        Eigen::Matrix3d A = Apq * Aqq;
+        A = A / std::cbrt(A.determinant());
+
+        //polar decomposition to get rotation
+        Eigen::Matrix3d R;
+        Eigen::Matrix3d S;
+        igl::polar_dec(Apq, R, S);
+        
+        Eigen::MatrixXd transformedP;
+        if(method == 0){
+            //rigid
+            Eigen::Matrix3d T;
+            T = R;
+            transformedP = (T * _Q.transpose()).transpose();
+
+        }else if(method == 1){
+            //linear
+            double beta = 0.7;
+            Eigen::Matrix3d T;
+            T = beta * A + (1-beta) * R;
+            transformedP = (T * _Q.transpose()).transpose();
+
+        }else if(method == 2){
+            //quadratic
+            //TODO: move this to pre-computation?
+            Eigen::MatrixXd _Qdelta;
+            _Qdelta.resize(_Q.rows(),9);
+            for(int r=0; r<_Q.rows(); ++r){
+                Eigen::VectorXd _qdelta;
+                _qdelta.setZero();
+                _qdelta<<_Q.row(r)(0),_Q.row(r)(1),_Q.row(r)(2),std::pow(_Q.row(r)(0),2),std::pow(_Q.row(r)(0),2),std::pow(_Q.row(r)(0),2),
+                         _Q.row(r)(0)*_Q.row(r)(1),_Q.row(r)(1)*_Q.row(r)(2),_Q.row(r)(0)*_Q.row(r)(2);
+                _Qdelta.row(r) = _qdelta;
+            }
+            Eigen::MatrixXd _Apq = mass * _P.transpose() * _Qdelta; //3x9
+            Eigen::MatrixXd _Aqq = mass * _Qdelta.transpose() * _Qdelta; //9x9
+            Eigen::MatrixXd _A = _Apq * _Aqq;
+            Eigen::MatrixXd _R;
+            _R.setZero(3,9);
+            _R.block(0,0,3,3) = R;
+
+            double beta = 0.7;
+            Eigen::MatrixXd T;
+            T = beta * _A + (1-beta) * _R; //3x9
+            transformedP = (T * _Qdelta.transpose()).transpose();
+        }
+
+        Eigen::MatrixXd gt = transformedP.rowwise() + center_of_masst.transpose();
+        // std::cout<<"S:"<<std::endl;
+        // std::cout<<S<<std::endl;
+        // std::cout<<"R:"<<std::endl;
+        // std::cout<<R<<std::endl;
+        // std::cout<<"qdot_tmp:"<<std::endl;
+        // std::cout<<qdoti_tmp<<std::endl;
+        // std::cout<<"q_tmp:"<<std::endl;
+        // std::cout<<qi_tmp<<std::endl;
+        // std::cout<<"goals:"<<std::endl;
+        // std::cout<<gt<<std::endl;
+        
+        //flatten gt
+        Eigen::VectorXd gt_flatten;
+        gt_flatten.resize(gt.rows()*gt.cols());
+        Eigen::MatrixXd gtt = gt.transpose();
+        gt_flatten = Eigen::Map<Eigen::VectorXd>(gtt.data(), gtt.rows()*gtt.cols());
+        
+        //update
+        double alpha = 1.0;
+        qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;     
+        // q = q_tmp + dt * qdot;
+        // //keep fixed points unchanged
+        // q = P * q + x0;
+    }
+    // else{
+    //     for(int ic=0; ic<clusters.size(); ++ic){
+    //         //compile qi qdoti for current cluster
+    //         Eigen::VectorXd qi_tmp;
+    //         Eigen::VectorXd qdoti_tmp;
+    //         qi_tmp.setZero(clusters.at(ic).size()*3);
+    //         qdoti_tmp.setZero(clusters.at(ic).size()*3);
+    //         for(int iv=0;iv<clusters.at(ic).size();++iv){
+    //             qi_tmp.segment<3>(iv*3) = q_tmp.segment<3>(clusters.at(ic).at(iv)*3);
+    //             qdoti_tmp.segment<3>(iv*3) = qdot_tmp.segment<3>(clusters.at(ic).at(iv)*3);
+    //         }
+            
+    //         //compute goal positions
+    //         //get current center of mass
+    //         Eigen::Vector3d center_of_masst;
+    //         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(qi_tmp.data(),3,qi_tmp.rows()/3);
+    //         center_of_masst = Vt.transpose().colwise().mean();
+
+    //         //get p: vertex position relative to current CoM 
+    //         //TODO: compute Q, need V as input here as well or precompute Q for cluster
+    //         Eigen::MatrixXd _P = Vt.transpose().rowwise() - center_of_masst.transpose();
+    //         Eigen::Matrix3d Aqq = mass * _Q.transpose() * _Q; // 3 x 3
+    //         Eigen::Matrix3d Apq = mass * _P.transpose() * _Q; // 3 x 3 
+            
+    //         //polar decomposition to get rotation
+    //         Eigen::Matrix3d R;
+    //         Eigen::Matrix3d S;
+    //         igl::polar_dec(Apq, R, S);
+            
+    //         Eigen::MatrixXd rotatedP = (R * _P.transpose()).transpose();
+    //         Eigen::MatrixXd gt = rotatedP.rowwise() + center_of_masst.transpose();
+    //         // // std::cout<<"S:"<<std::endl;
+    //         // // std::cout<<S<<std::endl;
+    //         // // std::cout<<"R:"<<std::endl;
+    //         // // std::cout<<R<<std::endl;
+    //         // std::cout<<"qdot_tmp:"<<std::endl;
+    //         // std::cout<<qdoti_tmp<<std::endl;
+    //         // std::cout<<"q_tmp:"<<std::endl;
+    //         // std::cout<<qi_tmp<<std::endl;
+    //         // std::cout<<"goals:"<<std::endl;
+    //         // std::cout<<gt<<std::endl;
+            
+    //         //flatten gt
+    //         Eigen::VectorXd gt_flatten;
+    //         gt_flatten.resize(gt.rows()*gt.cols());
+    //         Eigen::MatrixXd gtt = gt.transpose();
+    //         gt_flatten = Eigen::Map<Eigen::VectorXd>(gtt.data(), gtt.rows()*gtt.cols());
+            
+    //         //update
+    //         double alpha = 1.0;
+    //         qdoti = qdoti_tmp + alpha * ((gt_flatten-qi_tmp))/dt;     
+    //         //add to the global qdot at cluster vertices
+    //         qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;     
+    //     }
     // }
 
-    //get q: vertex position relative to CoM at t0
-    Eigen::MatrixXd P = V0.rowwise() - center_of_mass0.transpose();
-    //get p: vertex position relative to current CoM 
-    Eigen::MatrixXd Q = Vt.transpose().rowwise() - center_of_masst.transpose();
-    Eigen::Matrix3d Apq = mass * P.transpose() * Q; // 3 x 3 
-    Eigen::Matrix3d Aqq = mass * Q.transpose() * Q; // 3 x 3
-    
-    //polar decomposition to get rotation
-    
-    // 1. formula in paper
-    // Eigen::Matrix3d S = Apq.transpose() * Apq;
-    // S = S.cwiseSqrt(); //this might have some assumption on A?
-    // Eigen::Matrix3d R = Apq * S.inverse();
-
-    // 2. igl method that works
-    Eigen::Matrix3d R;
-    Eigen::Matrix3d S;
-    igl::polar_dec(Apq, R, S);
-    
-    // 3. use svd
-    // w, s, vh = svd(a, full_matrices=False)
-    // u = w.dot(vh)
-    // if side == 'right':
-    //     # a = up
-    //     p = (vh.T.conj() * s).dot(vh)
-    // else:
-    //     # a = pu
-    //     p = (w * s).dot(w.T.conj())
-    // return u, p
-    //Eigen::JacobiSVD<MatrixXd> svd(Apq, ComputeThinU | ComputeThinV);
-    
-    Eigen::MatrixXd rotatedP = (R * P.transpose()).transpose();
-    Eigen::MatrixXd gt = rotatedP.rowwise() + center_of_masst.transpose();
-    // std::cout<<"S:"<<std::endl;
-    // std::cout<<S<<std::endl;
-    // std::cout<<"R:"<<std::endl;
-    // std::cout<<R<<std::endl;
-    std::cout<<"qdot_tmp:"<<std::endl;
-    std::cout<<qdot_tmp<<std::endl;
-    std::cout<<"q_tmp:"<<std::endl;
-    std::cout<<q_tmp<<std::endl;
-    std::cout<<"goals:"<<std::endl;
-    std::cout<<gt<<std::endl;
-    
-    //flatten gt
-    Eigen::VectorXd gt_flatten;
-    gt_flatten.resize(gt.rows()*gt.cols());
-    Eigen::MatrixXd gtt = gt.transpose();
-    gt_flatten = Eigen::Map<Eigen::VectorXd>(gtt.data(), gtt.rows()*gtt.cols());
-    
-    //update
-    double alpha = 1.0;
-    qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;     
+    //update q with qdot
     q = q_tmp + dt * qdot;
-    //Eigen::VectorXd q = q_tmp + dt * qdot;
-    // q2(18) = q(18);
-    // q2(19) = q(19);
-    // q2(20) = q(20);
-    // q = q2;
+    q = P * q + x0;
 }

@@ -8,9 +8,27 @@
 std::vector<Eigen::VectorXd> q_list;
 std::vector<Eigen::VectorXd> qdot_list;
 std::mutex mtx;
-typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
-Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+//typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
+//Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+
+typedef std::tuple<int, //moving or still
+    Eigen::MatrixXd, //V 
+    Eigen::MatrixXi, //F
+    Eigen::MatrixXd, //V_skin
+    Eigen::MatrixXi, //F_skin
+    Eigen::SparseMatrixd, //N skinning matrix
+    Eigen::SparseMatrixd, //M
+    Eigen::Vector3d, //center of mass
+    Eigen::VectorXd, //q
+    Eigen::VectorXd, //qdot
+    Eigen::SparseMatrixd, //P
+    Eigen::VectorXd, //x0
+    Eigen::VectorXd, //gravity
+    std::vector<std::vector<int>>, //clusters
+    Eigen::MatrixXd> scene_object;  //Q = V-center_of_mass
+
 std::vector<scene_object> geometry;
+
 // 0 object type, 0 == plane, 1 == movable object
 // 1 V,
 // 2 F,

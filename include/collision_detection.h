@@ -16,8 +16,24 @@
 //  objs - Pairs of ids for objects involved in collisions. The first id is for the object, away from which the normal points. The second id 
 //  is for the object towards which the normal points. The floor has an id of -1.
 
-typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
-    Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+//typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
+//    Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+
+typedef std::tuple<int, //moving or still
+    Eigen::MatrixXd, //V 
+    Eigen::MatrixXi, //F
+    Eigen::MatrixXd, //V_skin
+    Eigen::MatrixXi, //F_skin
+    Eigen::SparseMatrixd, //N skinning matrix
+    Eigen::SparseMatrixd, //M
+    Eigen::Vector3d, //center of mass
+    Eigen::VectorXd, //q
+    Eigen::VectorXd, //qdot
+    Eigen::SparseMatrixd, //P
+    Eigen::VectorXd, //x0
+    Eigen::VectorXd, //gravity
+    std::vector<std::vector<int>>, //clusters
+    Eigen::MatrixXd> scene_object;  //Q = V-center_of_mass
 
 void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
                          unsigned int moving_obj_id,

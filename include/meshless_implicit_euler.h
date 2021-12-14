@@ -27,12 +27,14 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                                     FORCE &force, Eigen::VectorXd &tmp_force) {
     //gather forces
     force(tmp_force,q,qdot);
+    //std::cout<<tmp_force<<std::endl;
     
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
     Eigen::VectorXd q_tmp = q + dt * qdot_tmp;
     //keep fixed points unchanged
     q_tmp = P * q_tmp + x0;
+
     if(clusters.size()==1){
         //compute goal positions
         //get current center of mass
@@ -54,20 +56,24 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::MatrixXd transformedP;
         if(method == 0){
             //rigid
+            //std::cout<<"using method 0: rigid"<<std::endl;
             Eigen::Matrix3d T;
             T = R;
             transformedP = (T * _Q.transpose()).transpose();
 
         }else if(method == 1){
             //linear
+            //std::cout<<"using method 1: linear"<<std::endl;
             double beta = 0.7;
             Eigen::Matrix3d T;
+            A = A / std::cbrt(A.determinant());
             T = beta * A + (1-beta) * R;
             transformedP = (T * _Q.transpose()).transpose();
             A = A / std::cbrt(A.determinant());
 
         }else if(method == 2){
             //quadratic
+            //std::cout<<"using method 2: quadratic"<<std::endl;
             //TODO: move this to pre-computation?
             Eigen::MatrixXd _Qdelta;
             _Qdelta.resize(_Q.rows(),9);
@@ -100,8 +106,8 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         // std::cout<<qdoti_tmp<<std::endl;
         // std::cout<<"q_tmp:"<<std::endl;
         // std::cout<<qi_tmp<<std::endl;
-        // std::cout<<"goals:"<<std::endl;
-        // std::cout<<gt<<std::endl;
+        //std::cout<<"goals:"<<std::endl;
+        //std::cout<<gt<<std::endl;
         
         //flatten gt
         Eigen::VectorXd gt_flatten;
@@ -174,5 +180,5 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
 
     //update q with qdot
     q = q_tmp + dt * qdot;
-    q = P * q + x0;
+    //q = P * q + x0;
 }

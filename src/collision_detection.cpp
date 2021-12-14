@@ -26,11 +26,11 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
         double dist = (curr_v - pos).dot(dir);
         if(dist < 0.2){
             //save collision
-            std::cout<<"dist:"<<dist<<std::endl;
-            std::cout<<"current v"<<std::endl;
-            std::cout<<curr_v<<std::endl;
-            std::cout<<"plane v"<<std::endl;
-            std::cout<<curr_v - dir * dist<<std::endl;
+            //std::cout<<"dist:"<<dist<<std::endl;
+            //std::cout<<"current v"<<std::endl;
+            //std::cout<<curr_v<<std::endl;
+            //std::cout<<"plane v"<<std::endl;
+            //std::cout<<curr_v - dir * dist<<std::endl;
             collisions.push_back(std::make_pair(curr_v-dir*dist, vi));
         }
     }

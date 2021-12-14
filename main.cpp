@@ -1,13 +1,31 @@
 #include <iostream>
 #include <thread>
-
+#include <mutex>
 #include <assignment_setup.h>
 #include <visualization.h>
 
 //Simulation State
+std::vector<Eigen::VectorXd> q_list;
+std::vector<Eigen::VectorXd> qdot_list;
+std::mutex mtx;
+typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
+Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd> scene_object;
+std::vector<scene_object> geometry;
+// 0 object type, 0 == plane, 1 == movable object
+// 1 V,
+// 2 F,
+// 3 skinning V,
+// 4 skinning F,
+// 5 N,
+// 6 M,
+// 7 com,
+// 8 q,
+// 9 qdot
+// 10 P
+// 11 gravity
+
 Eigen::VectorXd q;
 Eigen::VectorXd qdot;
-
 //simulation time and time step
 double t = 0; //simulation time 
 double dt = 0.0001; //time step
@@ -21,14 +39,16 @@ bool simulation_callback() {
     //simulate(q, qdot, dt, t);
 
     while(simulating) {
-      simulate(q, qdot, dt, t);
-       t += dt;
+		simulate(geometry, dt, t, mtx);
+    	t += dt;
     }
     return false;
 }
 
-bool draw_callback(igl::opengl::glfw::Viewer &viewer) {   
-    draw(q, qdot, t);
+bool draw_callback(igl::opengl::glfw::Viewer &viewer) {
+    mtx.lock();
+    draw(geometry, t);
+    mtx.unlock();
     return false;
 }
 
@@ -46,11 +66,10 @@ void h(Ret &&a, B b, C c, void (*func)(Ret, B, C)) {
 }
 
 int main(int argc, char **argv) {
-
     std::cout<<"Start Meshless Deformation...\n";
 
     //assignment specific setup
-    assignment_setup(argc, argv, q, qdot);
+    assignment_setup(argc, argv, q_list, qdot_list, geometry);
 
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback);

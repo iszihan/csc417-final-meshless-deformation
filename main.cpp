@@ -54,7 +54,6 @@ double dt = 0.00001; //time step
 bool simulating = true;
 bool simulation_callback() {
     
-<<<<<<< HEAD
     //simulate(q, qdot, dt, t);
     //simulate(q, qdot, dt, t);
     //simulate(q, qdot, dt, t);
@@ -62,14 +61,6 @@ bool simulation_callback() {
     while(simulating) {
 		simulate(geometry, dt, t, mtx);
     	t += dt;
-=======
-    // simulate(geometry, dt, t, mtx);
-    // simulate(geometry, dt, t, mtx);
-    // simulate(q, qdot, dt, t);
-    while(simulating){
-	 	simulate(geometry, dt, t, mtx);
-     	t += dt;
->>>>>>> 571fba3a535f86d39f026ed3c41a2bbeda068a68
     }
     return false;
 }
@@ -97,14 +88,9 @@ void h(Ret &&a, B b, C c, void (*func)(Ret, B, C)) {
 int main(int argc, char **argv) {
     std::cout<<"Start Meshless Deformation...\n";
 
-<<<<<<< HEAD
-    //assignment specific setup
-    assignment_setup(argc, argv, q_list, qdot_list, geometry);
-=======
     //setup
     assignment_setup(argc, argv, geometry);
     //clustering_setup(argc, argv, geometry);
->>>>>>> 571fba3a535f86d39f026ed3c41a2bbeda068a68
 
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback);

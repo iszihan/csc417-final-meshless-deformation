@@ -3,6 +3,7 @@
 #include<Eigen/SparseCholesky>
 #include <EigenTypes.h>
 #include <igl/polar_dec.h>
+#include <pseudoinverse.h>
 //Input:
 //  q - generalized coordinates for the FEM system
 //  qdot - generalized velocity for the FEM system
@@ -25,17 +26,16 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                                     Eigen::SparseMatrixd &P, Eigen::VectorXd &x0,
                                     Eigen::MatrixXd &_Q, std::vector<std::vector<int>> clusters, int method,
                                     FORCE &force, Eigen::VectorXd &tmp_force) {
+    // std::cout<<"inside integration again..."<<std::endl;
+
     //gather forces
     force(tmp_force,q,qdot);
-    //std::cout<<tmp_force<<std::endl;
     
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
     Eigen::VectorXd q_tmp = q + dt * qdot_tmp;
     //keep fixed points unchanged
     //q_tmp = P * q_tmp + x0;
-
-    //std::cout<<_Q<<std::endl;
 
     if(clusters.size()==1){
         //compute goal positions
@@ -58,15 +58,15 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::MatrixXd transformedP;
         if(method == 0){
             //rigid
-            //std::cout<<"using method 0: rigid"<<std::endl;
+            std::cout<<"using method 0: rigid"<<std::endl;
             Eigen::Matrix3d T;
             T = R;
             transformedP = (T * _Q.transpose()).transpose();
 
         }else if(method == 1){
             //linear
-            //std::cout<<"using method 1: linear"<<std::endl;
-            double beta = 0.7;
+            std::cout<<"using method 1: linear"<<std::endl;
+            double beta = 0.5;
             Eigen::Matrix3d T;
             A = A / std::cbrt(A.determinant());
             T = beta * A + (1-beta) * R;
@@ -74,51 +74,46 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
 
         }else if(method == 2){
             //quadratic
-            //std::cout<<"using method 2: quadratic"<<std::endl;
+            std::cout<<"using method 2: quadratic"<<std::endl;
+            
             //TODO: move this to pre-computation?
             Eigen::MatrixXd _Qdelta;
-            _Qdelta.resize(_Q.rows(),9);
+            _Qdelta.setZero(_Q.rows(),9);
             for(int r=0; r<_Q.rows(); ++r){
                 Eigen::VectorXd _qdelta;
-                _qdelta.setZero();
-                _qdelta<<_Q.row(r)(0),_Q.row(r)(1),_Q.row(r)(2),std::pow(_Q.row(r)(0),2),std::pow(_Q.row(r)(0),2),std::pow(_Q.row(r)(0),2),
+                _qdelta.setZero(9);
+                _qdelta<<_Q.row(r)(0),_Q.row(r)(1),_Q.row(r)(2),
+                         std::pow(_Q.row(r)(0),2),std::pow(_Q.row(r)(1),2),std::pow(_Q.row(r)(2),2),
                          _Q.row(r)(0)*_Q.row(r)(1),_Q.row(r)(1)*_Q.row(r)(2),_Q.row(r)(0)*_Q.row(r)(2);
                 _Qdelta.row(r) = _qdelta;
             }
+
             Eigen::MatrixXd _Apq = mass * _P.transpose() * _Qdelta; //3x9
-            Eigen::MatrixXd _Aqq = mass * _Qdelta.transpose() * _Qdelta; //9x9
-            Eigen::MatrixXd _A = _Apq * _Aqq;
+            Eigen::MatrixXd _Aqqinv = (mass * _Qdelta.transpose() * _Qdelta); 
+            Eigen::MatrixXd _Aqq = pseudoinverse(_Aqqinv, std::numeric_limits<double>::epsilon());//9x9
+            //Eigen::MatrixXd _Aqq = (mass * _Qdelta.transpose() * _Qdelta).completeOrthogonalDecomposition().pseudoInverse();
+   
+            Eigen::MatrixXd _A = _Apq * _Aqq; //how do we presearve volume
             Eigen::MatrixXd _R;
             _R.setZero(3,9);
             _R.block(0,0,3,3) = R;
-
-            double beta = 0.7;
+            double beta = 0.99;
             Eigen::MatrixXd T;
             T = beta * _A + (1-beta) * _R; //3x9
             transformedP = (T * _Qdelta.transpose()).transpose();
         }
-
         Eigen::MatrixXd gt = transformedP.rowwise() + center_of_masst.transpose();
-        // std::cout<<"S:"<<std::endl;
-        // std::cout<<S<<std::endl;
-        // std::cout<<"R:"<<std::endl;
-        // std::cout<<R<<std::endl;
-        // std::cout<<"qdot_tmp:"<<std::endl;
-        // std::cout<<qdoti_tmp<<std::endl;
-        // std::cout<<"q_tmp:"<<std::endl;
-        // std::cout<<qi_tmp<<std::endl;
-        //std::cout<<"goals:"<<std::endl;
-        //std::cout<<gt<<std::endl;
         
         //flatten gt
         Eigen::VectorXd gt_flatten;
         gt_flatten.resize(gt.rows()*gt.cols());
         Eigen::MatrixXd gtt = gt.transpose();
         gt_flatten = Eigen::Map<Eigen::VectorXd>(gtt.data(), gtt.rows()*gtt.cols());
-        
+
         //update
         double alpha = 1.0;
-        qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;     
+        qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;  
+   
         // q = q_tmp + dt * qdot;
         // //keep fixed points unchanged
         // q = P * q + x0;

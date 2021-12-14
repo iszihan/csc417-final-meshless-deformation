@@ -17,9 +17,8 @@ double dt = 0.00001; //time step
 bool simulating = true;
 bool simulation_callback() {
     
+    //simulate(geometry, dt, t, mtx);
     // simulate(geometry, dt, t, mtx);
-    // simulate(geometry, dt, t, mtx);
-    // simulate(q, qdot, dt, t);
     while(simulating){
 	 	simulate(geometry, dt, t, mtx);
      	t += dt;

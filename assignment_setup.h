@@ -60,7 +60,7 @@ int item_placement = -1;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> spring_points_list;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_points_list;
 //integration
-int method = 0;
+int method = 2;
 
 //collision detection stuff
 bool collision_detection_on = false;
@@ -334,7 +334,7 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
 
 inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx)
 {
-    //std::cout<<"inside simulate"<<std::endl;
+    std::cout<<"inside simulate"<<std::endl;
     //Interaction spring
     if (!simulation_pause)
     {
@@ -507,7 +507,7 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
     }
     //TODO:
     // - toggle key to drop objects from sky
-    if (key == 'Q')
+    if (key == 'E')
     {
         std::exit(1);
     }
@@ -611,10 +611,27 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
 
 inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
-    // load setup scene
-    Eigen::Vector3d origin;
-    origin << 0.0, 0.0, 0.0;
-    add_object(geometry, "../data/cube.obj", origin, false);
+    // // load setup scene
+    // Eigen::Vector3d origin;
+    // origin << 0.0, 0.0, 0.0;
+    // add_object(geometry, "../data/cube.obj", origin, false);
+
+    //load in cube
+    Eigen::MatrixXd V, SV;
+    Eigen::MatrixXi F, SF;
+    int subdiv = 2;
+    igl::readOBJ("../data/cube.obj", V, F);
+    //subdivide by 2
+    for (int i = 0; i < subdiv; ++i)
+    {
+        igl::upsample(V, F, SV, SF);
+        V = SV;
+        F = SF;
+    }
+    Eigen::Vector3i cluster_size;
+    cluster_size << 1, 1, 1;
+    add_object_VF(geometry, SV, SF, false, cluster_size);
+
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;

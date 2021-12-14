@@ -1,6 +1,5 @@
 #ifndef ASSIGNMENT_SETUP_H
 #define ASSIGNMENT_SETUP_H
-
 #include <igl/readMESH.h>
 #include <igl/readOBJ.h>
 #include <igl/writeOBJ.h>
@@ -8,7 +7,6 @@
 #include <read_tetgen.h>
 #include <igl/boundary_facets.h>
 #include <igl/volume.h>
-
 //assignment files for implementing simulation and interaction
 #include <visualization.h>
 #include <init_state.h>
@@ -18,7 +16,6 @@
 #include <meshless_implicit_euler.h>
 #include <dV_cloth_gravity_dq.h>
 #include <dV_spring_particle_particle_dq.h>
-
 //collision detection stuff
 #include <collision_detection.h>
 
@@ -32,7 +29,7 @@ std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXi>> still_geometry;
 std::vector<std::pair<Eigen::MatrixXd, Eigen::MatrixXi>> moving_geometry;
 
 //material parameters
-double mass = 0.1;
+double mass = 1.0;
 
 //BC
 std::vector<unsigned int> fixed_point_indices;
@@ -61,7 +58,6 @@ double k_selected = 1e5;
 double k_collision = 1e5;
 inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double t)
 {
-    //std::cout<<"inside simulate"<<std::endl;
 
     //Interaction spring
     if (! simulation_pause){
@@ -71,12 +67,8 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
         for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
         {   
-            // std::cout<<pickedi<<std::endl;
             Eigen::Vector3d p1 = (q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
             Eigen::Vector3d p2 = (q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
-            // std::cout<<p1<<std::endl;
-            // std::cout<<p2<<std::endl;
-            //spring_points.push_back(std::make_pair((P.transpose() * q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
             spring_points.push_back(std::make_pair((q + x0).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
             
             //TODO: add a dragging handle visualization
@@ -88,59 +80,33 @@ inline void simulate(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, doubl
         Eigen::Vector6d dV_collide;
         for(unsigned int mi=0; mi<moving_geometry.size(); ++mi) {
             for(unsigned int si=0; si<still_geometry.size(); ++si){
-                std::cout<<"checking collision"<<std::endl;
                 collision_detection(collision_points, mi, si, 
                                     q, still_geometry[si].first, still_geometry[si].second);
             }
         }
+        //TODO: add collision spring points between moving geometries 
 
-        // std::cout<<collision_points.size()<<std::endl;
-        // if(collision_points.size()>0){
-        //     std::cout<<"colliding points:"<<std::endl;
-        //     std::cout<<"p1:"<<std::endl;
-        //     std::cout<<moving_geometry[0].first.row(collision_points[0].second)<<std::endl;
-        //     std::cout<<"ps:"<<std::endl;
-        //     std::cout<<collision_points[0].first<<std::endl;
-        //     std::exit(1);
-        // }
-
-        //add collision spring points between moving geometries 
         auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
         {
             f = -gravity;
 
             //dragging force
-            // for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
-            // {
-            //     //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-            //     dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-            //     std::cout<<"q1:"<<spring_points[pickedi].first<<std::endl;
-            //     std::cout<<"q2:"<<(q2 + x0).segment<3>(spring_points[pickedi].second)<<std::endl;
-            //     f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
-            //     std::cout<<"force:"<<std::endl;
-            //     std::cout<<dV_mouse.segment<3>(3)<<std::endl;
-            // }
+            for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
+            {
+                dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+                f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+                std::cout<<dV_mouse.segment<3>(3)<<std::endl;
+            }
 
             //collision force
             for (unsigned int ci = 0; ci < collision_points.size(); ci++)
             {
                 //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
                 dV_spring_particle_particle_dq(dV_collide, collision_points[ci].first, (q2 + x0).segment<3>(3 * collision_points[ci].second), 0.0, k_collision);
-                std::cout<<"q1:"<<collision_points[ci].first<<std::endl;
-                std::cout<<"q2:"<<(q2 + x0).segment<3>(3 * collision_points[ci].second)<<std::endl;
                 f.segment<3>(3 * collision_points[ci].second) += dV_collide.segment<3>(3);
-                std::cout<<"added force:"<<std::endl;
-                std::cout<<dV_collide.segment<3>(3)<<std::endl;
-                std::cout<<"current force:"<<std::endl;
-                std::cout<<f.segment<3>(3 * collision_points[ci].second)<<std::endl;
             }
-            //std::cout<<"here"<<std::endl;
-            //std::cout<<gravity.rows()<<std::endl;
-            //std::cout<<P.rows()<<std::endl;
             f = P * f;
-            //std::cout<<"here2"<<std::endl;
         };
-
         meshless_implicit_euler(q, qdot, dt, mass, V, center_of_mass, force, tmp_force);
     }
 }
@@ -163,6 +129,8 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
         collision_detection_on = !collision_detection_on;
         Visualize::set_visible(1, collision_detection_on);
     }
+    //TODO: 
+    // - toggle key to drop objects from sky
     if (key == 'Q'){
         std::exit(1);
     }
@@ -178,6 +146,9 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     igl::readOBJ("../data/cube.obj", V, F);
     //setup simulation
     init_state(q, qdot, V);
+    qdot(0) = 1.0;
+    qdot(1) = 1.0;
+    qdot(2) = 1.0;
 
     //add geometry to scene
     V_skin = V;
@@ -205,10 +176,11 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
 
     // //fix to the floor
     //find_min_vertices(fixed_point_indices, V, 0.001);
+    // fixed_point_indices.push_back(0);
     // P.resize(q.rows(), q.rows());
     // P.setIdentity();
-    //fixed_point_constraints(P, q.rows(), fixed_point_indices);
-    //x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
+    // fixed_point_constraints(P, q.rows(), fixed_point_indices);
+    // x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
     // //correct M, q and qdot so they are the right size
     // q = P * q;
     // qdot = P * qdot;
@@ -223,12 +195,12 @@ inline void assignment_setup(int argc, char **argv, Eigen::VectorXd &q, Eigen::V
     //add floor
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
-    floor_normal << 0.7, 0.7, 0.;
-    floor_pos << 0., -3.0, 0.;    
+    floor_normal << 0.0, 1.0, 0.0;
+    floor_pos << -2.0, -4.0, 0.;    
     Eigen::MatrixXd V_floor;
     Eigen::MatrixXi F_floor;
     igl::readOBJ("../data/plane.obj", V_floor, F_floor);
-    V_floor *= 10.0; //make it bigger
+    //V_floor *= 10.0; //make it bigger
     N.resize(V_floor.rows(), V_floor.rows());
     N.setIdentity();
     //rotate plane

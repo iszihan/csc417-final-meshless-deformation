@@ -23,12 +23,20 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
 
     //gather forces
     force(tmp_force,q,qdot);
+    
+    //update without the goal position fitting
+    Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
+    Eigen::VectorXd q_tmp = q + dt * qdot_tmp;
+    //Eigen::VectorXd q2_tmp = q + dt * qdot_tmp;
+    // q2_tmp(18) = q(18);
+    // q2_tmp(19) = q(19);
+    // q2_tmp(20) = q(20);
+    // q_tmp = q2_tmp;
 
     //compute goal positions
-
     //get current center of mass
     Eigen::Vector3d center_of_masst;
-    Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q.data(),3,q.rows()/3);
+    Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q_tmp.data(),3,q_tmp.rows()/3);
     center_of_masst = Vt.transpose().colwise().mean();
     
     // std::cout<<center_of_masst<<std::endl;
@@ -73,8 +81,12 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     // std::cout<<S<<std::endl;
     // std::cout<<"R:"<<std::endl;
     // std::cout<<R<<std::endl;
-    // std::cout<<"goals:"<<std::endl;
-    // std::cout<<gt<<std::endl;
+    std::cout<<"qdot_tmp:"<<std::endl;
+    std::cout<<qdot_tmp<<std::endl;
+    std::cout<<"q_tmp:"<<std::endl;
+    std::cout<<q_tmp<<std::endl;
+    std::cout<<"goals:"<<std::endl;
+    std::cout<<gt<<std::endl;
     
     //flatten gt
     Eigen::VectorXd gt_flatten;
@@ -84,6 +96,11 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     
     //update
     double alpha = 1.0;
-    qdot = qdot + alpha * ((gt_flatten-q))/dt + dt * tmp_force/mass;     
-    q = q + dt * qdot;
+    qdot = qdot_tmp + alpha * ((gt_flatten-q_tmp))/dt;     
+    q = q_tmp + dt * qdot;
+    //Eigen::VectorXd q = q_tmp + dt * qdot;
+    // q2(18) = q(18);
+    // q2(19) = q(19);
+    // q2(20) = q(20);
+    // q = q2;
 }

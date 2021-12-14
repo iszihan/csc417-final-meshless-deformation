@@ -11,18 +11,18 @@ Eigen::VectorXd q;
 Eigen::VectorXd qdot;
 
 double t = 0; //simulation time 
-double dt = 0.0001; //time step
+double dt = 0.00001; //time step
 
 //simulation loop
 bool simulating = true;
 bool simulation_callback() {
     
-    //simulate(q, qdot, dt, t);
-    //simulate(q, qdot, dt, t);
-    //simulate(q, qdot, dt, t);
-    while(simulating) {
-		simulate(geometry, dt, t, mtx);
-    	t += dt;
+    // simulate(geometry, dt, t, mtx);
+    // simulate(geometry, dt, t, mtx);
+    // simulate(q, qdot, dt, t);
+    while(simulating){
+	 	simulate(geometry, dt, t, mtx);
+     	t += dt;
     }
     return false;
 }
@@ -51,8 +51,8 @@ int main(int argc, char **argv) {
     std::cout<<"Start Meshless Deformation...\n";
 
     //setup
-    //assignment_setup(argc, argv, geometry);
-    clustering_setup(argc, argv, geometry);
+    assignment_setup(argc, argv, geometry);
+    //clustering_setup(argc, argv, geometry);
 
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback);

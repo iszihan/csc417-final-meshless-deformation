@@ -22,26 +22,26 @@
 #include <collision_detection.h>
 
 //variables for geometry
-typedef std::tuple<int, //moving or still
-Eigen::MatrixXd, //V 
-Eigen::MatrixXi, //F
-Eigen::MatrixXd, //V_skin
-Eigen::MatrixXi, //F_skin
-Eigen::SparseMatrixd, //N skinning matrix
-Eigen::SparseMatrixd, //M
-Eigen::Vector3d, //center of mass
-Eigen::VectorXd, //q
-Eigen::VectorXd, //qdot
-Eigen::SparseMatrixd, //P
-Eigen::VectorXd, //x0
-Eigen::VectorXd, //gravity
-std::vector<std::vector<int>>, //clusters
-Eigen::MatrixXd //Q = V-center_of_mass
-> scene_object;
-std::string data_paths[3] = {"../data/cube.obj", 
+typedef std::tuple<int,                           //moving or still
+                   Eigen::MatrixXd,               //V
+                   Eigen::MatrixXi,               //F
+                   Eigen::MatrixXd,               //V_skin
+                   Eigen::MatrixXi,               //F_skin
+                   Eigen::SparseMatrixd,          //N skinning matrix
+                   Eigen::SparseMatrixd,          //M
+                   Eigen::Vector3d,               //center of mass
+                   Eigen::VectorXd,               //q
+                   Eigen::VectorXd,               //qdot
+                   Eigen::SparseMatrixd,          //P
+                   Eigen::VectorXd,               //x0
+                   Eigen::VectorXd,               //gravity
+                   std::vector<std::vector<int>>, //clusters
+                   Eigen::MatrixXd                //Q = V-center_of_mass
+                   >
+    scene_object;
+std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
-std::vector<Eigen::VectorXd> force_list;
 
 //material parameters
 double mass = 1.0;
@@ -73,7 +73,7 @@ double lspring = 0.1;
 double k_selected = 1e5;
 double k_collision = 1e5;
 
-inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd& V, Eigen::MatrixXi& F, bool fixed, Eigen::Vector3i clusters)
+inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &V, Eigen::MatrixXi &F, bool fixed, Eigen::Vector3i clusters)
 {
     Eigen::VectorXd q;
     Eigen::VectorXd qdot;
@@ -89,7 +89,7 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd& 
 
     init_state(q, qdot, V);
     center_of_mass = V.colwise().mean();
-    Q = V.transpose().rowwise() - center_of_mass.transpose();
+    Q = V.rowwise() - center_of_mass.transpose();
 
     //skinning
     V_skin = V;
@@ -109,7 +109,8 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd& 
     gravity.resize(q.rows(), 1);
     dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
 
-    if(fixed){
+    if (fixed)
+    {
         //fix to the floor
         std::vector<unsigned int> fixed_point_indices;
         find_min_vertices(fixed_point_indices, V, 0.001);
@@ -122,8 +123,10 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd& 
         // q = P * q;
         // qdot = P * qdot;
         // M = P * M * P.transpose();
-    }else{
-        //not fixed to the floor 
+    }
+    else
+    {
+        //not fixed to the floor
         P.resize(q.rows(), q.rows());
         P.setIdentity();
         x0.resize(q.size());
@@ -133,30 +136,33 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd& 
     // form clusters [x_clusters, y_cluster, z_clusters]
     Eigen::Vector3d V_max = V.colwise().maxCoeff();
     Eigen::Vector3d V_min = V.colwise().minCoeff();
-    double dx = (V_max(0)-V_min(0)) / clusters(0);
-    double dy = (V_max(1)-V_min(1)) / clusters(1);
-    double dz = (V_max(2)-V_min(2)) / clusters(2);
+    double dx = (V_max(0) - V_min(0)) / clusters(0);
+    double dy = (V_max(1) - V_min(1)) / clusters(1);
+    double dz = (V_max(2) - V_min(2)) / clusters(2);
     std::vector<std::vector<int>> vertex_clusters;
-    for(int ix=0; ix<clusters(0); ++ix){
+    for (int ix = 0; ix < clusters(0); ++ix)
+    {
         double x_min = V_min(0) + dx * ix;
-        double x_max = V_min(0) + dx * (ix+1);
-        for(int iy=0; iy<clusters(1); ++iy){
+        double x_max = V_min(0) + dx * (ix + 1);
+        for (int iy = 0; iy < clusters(1); ++iy)
+        {
             double y_min = V_min(1) + dy * iy;
-            double y_max = V_min(1) + dy * (iy+1);
-            for(int iz=0; iz<clusters(2); ++iz){
+            double y_max = V_min(1) + dy * (iy + 1);
+            for (int iz = 0; iz < clusters(2); ++iz)
+            {
                 double z_min = V_min(2) + dz * iz;
-                double z_max = V_min(2) + dz * (iz+1);
+                double z_max = V_min(2) + dz * (iz + 1);
                 // std::cout<<"x range:"<<x_min<<"-"<<x_max<<std::endl;
                 // std::cout<<"y range:"<<y_min<<"-"<<y_max<<std::endl;
                 // std::cout<<"z range:"<<z_min<<"-"<<z_max<<std::endl;
                 std::vector<int> curr_cluster;
                 curr_cluster.clear();
                 double tol = 1e-3;
-                for(int iv=0; iv<V.rows();++iv){
+                for (int iv = 0; iv < V.rows(); ++iv)
+                {
                     //put vertices to current cluster
-                    if(V.row(iv)(0) >= x_min - tol && V.row(iv)(0) <= x_max + tol
-                    && V.row(iv)(1) >= y_min - tol&& V.row(iv)(1) <= y_max + tol
-                    && V.row(iv)(2) >= z_min - tol&& V.row(iv)(2) <= z_max + tol){
+                    if (V.row(iv)(0) >= x_min - tol && V.row(iv)(0) <= x_max + tol && V.row(iv)(1) >= y_min - tol && V.row(iv)(1) <= y_max + tol && V.row(iv)(2) >= z_min - tol && V.row(iv)(2) <= z_max + tol)
+                    {
                         curr_cluster.push_back(iv);
                     }
                 }
@@ -209,12 +215,12 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     igl::readOBJ(file_path, V, F);
 
     init_state(q, qdot, V);
-	for (int vi = 0; vi < q.size()/3; vi++)
-	{
+    for (int vi = 0; vi < q.size() / 3; vi++)
+    {
         q.segment<3>(vi * 3) += position;
-	}
+    }
     center_of_mass = V.colwise().mean();
-	Q = V.transpose().rowwise() - center_of_mass.transpose();
+    Q = V.rowwise() - center_of_mass.transpose();
 
     //skinning
     V_skin = V;
@@ -234,7 +240,8 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     gravity.resize(q.rows(), 1);
     dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
 
-    if(fixed){
+    if (fixed)
+    {
         //fix to the floor
         std::vector<unsigned int> fixed_point_indices;
         find_min_vertices(fixed_point_indices, V, 0.001);
@@ -247,8 +254,10 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
         // q = P * q;
         // qdot = P * qdot;
         // M = P * M * P.transpose();
-    }else{
-        //not fixed to the floor 
+    }
+    else
+    {
+        //not fixed to the floor
         P.resize(q.rows(), q.rows());
         P.setIdentity();
         x0.resize(q.size());
@@ -289,7 +298,7 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     Eigen::SparseMatrixd N;
     igl::readOBJ("../data/plane.obj", V_floor, F_floor);
     //make it bigger
-    V_floor *= 10.0; 
+    V_floor *= 10.0;
     //skinning
     N.resize(V_floor.rows(), V_floor.rows());
     N.setIdentity();
@@ -301,11 +310,12 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     Eigen::Vector3d axis = n0.cross(floor_normal);
     Eigen::Matrix3d floor_R = Eigen::AngleAxisd(angle, axis).matrix();
     //translate plane
-    for (unsigned int iv = 0; iv < V_floor.rows(); ++iv) {
+    for (unsigned int iv = 0; iv < V_floor.rows(); ++iv)
+    {
         Eigen::Vector3d rotated = floor_R * V_floor.row(iv).transpose();
         V_floor.row(iv) = (rotated + floor_pos + Eigen::Vector3d(0., -0.01, 0.)).transpose();
     }
-    
+
     Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N, Eigen::RowVector3d(64, 165, 130) / 255.);
     scene_object one_geometry;
     Eigen::SparseMatrixd M;
@@ -322,54 +332,61 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     geometry.push_back(one_geometry);
 }
 
-inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex & mtx)
+inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx)
 {
     //std::cout<<"inside simulate"<<std::endl;
-    force_list.clear();
     //Interaction spring
-    if (!simulation_pause) {
-    	
+    if (!simulation_pause)
+    {
+
         spring_points_list.clear();
         collision_points_list.clear();
-    	for (int i = 0; i < geometry.size(); i++)
-    	{
+        for (int i = 0; i < geometry.size(); i++)
+        {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
             spring_points_list.push_back(spring_points_tmp);
             collision_points_list.push_back(collision_points_tmp);
-    	}
+        }
 
         //add collision spring points with other geometry
         Eigen::Vector6d dV_collide;
-        for (int mi = 0; mi < geometry.size(); ++mi) {
+        for (int mi = 0; mi < geometry.size(); ++mi)
+        {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
-        	
-            scene_object moving_object = geometry.at(mi);
-        	// only check if the object is not static
-        	if (std::get<0>(moving_object) >= 1)
-        	{
 
-                for (unsigned int si = 0; si < geometry.size(); ++si) {
+            scene_object moving_object = geometry.at(mi);
+            // only check if the object is not static
+            if (std::get<0>(moving_object) >= 1)
+            {
+                for (unsigned int si = 0; si < geometry.size(); ++si)
+                {
                     // do not check collision against itself
-                    if (si != mi) {
+                    if (si != mi)
+                    {
                         scene_object collision_target = geometry.at(si);
                         // only have collision detection with planes for now others can be implemented later
-                    	if (std::get<0>(collision_target) == 0) {
+                        if (std::get<0>(collision_target) == 0)
+                        {
+                            //std::cout << "checking collision" << std::endl;
                             collision_detection(collision_points_list.at(mi), mi, si,
-                                std::get<8>(moving_object), std::get<1>(collision_target), std::get<2>(collision_target));
+                                                std::get<8>(moving_object), std::get<1>(collision_target), std::get<2>(collision_target));
                         }
                     }
                 }
-        	}
+            }
+            //std::cout << collision_points_list.at(mi).size() << std::endl;
         }
 
         Eigen::Vector3d mouse;
         Eigen::Vector6d dV_mouse;
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
-        for (int object_id = 0; object_id < geometry.size(); object_id++) {
-        	// only consider the movable objects to save compute
-            if (std::get<0>(geometry.at(object_id)) > 0) {
+        for (int object_id = 0; object_id < geometry.size(); object_id++)
+        {
+            // only consider the movable objects to save compute
+            if (std::get<0>(geometry.at(object_id)) > 0)
+            {
                 for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                 {
                     Eigen::VectorXd q = std::get<8>(geometry.at(object_id));
@@ -381,27 +398,29 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                 }
             }
         }
-        
-        for (int i = 0; i < geometry.size(); i++) {
-        //add collision spring points between moving geometries
+
+        for (int i = 0; i < geometry.size(); i++)
+        {
+            //add collision spring points between moving geometries
             scene_object current_object = geometry.at(i);
-            if (std::get<0>(current_object) > 0) {
-                auto force = [&](Eigen::VectorXd& f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
+            if (std::get<0>(current_object) > 0)
+            {
+                auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
                 {
                     Eigen::SparseMatrixd P = std::get<10>(current_object);
                     std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points = spring_points_list.at(i);
                     f = -std::get<12>(current_object);
                     //dragging force
-                     //for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
-                     //{
-                     //    //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-                     //    dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-                     //    //std::cout<<"q1:"<<spring_points[pickedi].first<<std::endl;
-                     //    //std::cout<<"q2:"<<(q2 + x0).segment<3>(spring_points[pickedi].second)<<std::endl;
-                     //    f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
-                     //    //std::cout<<"force:"<<std::endl;
-                     //    //std::cout<<dV_mouse.segment<3>(3)<<std::endl;
-                     //}
+                    //for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
+                    //{
+                    //    //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+                    //    dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
+                    //    //std::cout<<"q1:"<<spring_points[pickedi].first<<std::endl;
+                    //    //std::cout<<"q2:"<<(q2 + x0).segment<3>(spring_points[pickedi].second)<<std::endl;
+                    //    f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+                    //    //std::cout<<"force:"<<std::endl;
+                    //    //std::cout<<dV_mouse.segment<3>(3)<<std::endl;
+                    //}
 
                     //collision force
                     for (unsigned int ci = 0; ci < collision_points_list.at(i).size(); ci++)
@@ -432,7 +451,7 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                 std::get<8>(geometry.at(i)) = q_tmp;
                 std::get<9>(geometry.at(i)) = qdot_tmp;
             }
-		}
+        }
 
         if (item_placement >= 0)
         {
@@ -449,11 +468,13 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
 inline void draw(std::vector<scene_object> geometry, double t)
 {
     //update vertex positions using simulation
-    for (int i = 0; i < geometry.size(); i++) {
+    for (int i = 0; i < geometry.size(); i++)
+    {
         scene_object current_object = geometry.at(i);
-        if (std::get<0>(current_object) > 0) {
-		   Visualize::update_vertex_positions(i, std::get<10>(current_object).transpose() * std::get<8>(current_object) + std::get<11>(current_object));
-		}
+        if (std::get<0>(current_object) > 0)
+        {
+            Visualize::update_vertex_positions(i, std::get<10>(current_object).transpose() * std::get<8>(current_object) + std::get<11>(current_object));
+        }
     }
 }
 
@@ -473,7 +494,8 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
     {
         std::cout << "toggle deformation to quadratic \n";
         method = 2;
-    }if (key == 'R')
+    }
+    if (key == 'R')
     {
         std::cout << "toggle deformation to rigid only \n";
         method = 0;
@@ -483,65 +505,77 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
         collision_detection_on = !collision_detection_on;
         Visualize::set_visible(1, collision_detection_on);
     }
-    //TODO: 
+    //TODO:
     // - toggle key to drop objects from sky
-    if (key == 'Q'){
+    if (key == 'Q')
+    {
         std::exit(1);
     }
-    if (key == 'P'){
+    if (key == 'P')
+    {
         simulation_pause = !simulation_pause;
     }
 
-	if ((key == '1' || key == '2' || key == '3') && item_placement == -1)
-	{
-		if (key == '1'){
+    if ((key == '1' || key == '2' || key == '3') && item_placement == -1)
+    {
+        if (key == '1')
+        {
             item_placement = 0;
-        } else if (key == '2') {
+        }
+        else if (key == '2')
+        {
             item_placement = 1;
-        } else if (key == '3') {
+        }
+        else if (key == '3')
+        {
             item_placement = 2;
         }
         std::cout << "\n gonna be dropping item " << item_placement << "\n";
-	}
-	
+    }
+
     return false;
 }
 
-inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, double t){
+inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, double t)
+{
     //Interaction spring
-    if (!simulation_pause) {
+    if (!simulation_pause)
+    {
         //collect dragging points
         spring_points_list.clear();
-    	for (int i = 0; i < geometry.size(); i++)
-    	{
+        for (int i = 0; i < geometry.size(); i++)
+        {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             spring_points_list.push_back(spring_points_tmp);
-    	}
+        }
 
         Eigen::Vector3d mouse;
         Eigen::Vector6d dV_mouse;
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
-        for (int object_id = 0; object_id < geometry.size(); object_id++) {
-        	// only consider the movable objects to save compute
-            if (std::get<0>(geometry.at(object_id)) > 0) {
+        for (int object_id = 0; object_id < geometry.size(); object_id++)
+        {
+            // only consider the movable objects to save compute
+            if (std::get<0>(geometry.at(object_id)) > 0)
+            {
                 for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                 {
                     Eigen::VectorXd q = std::get<8>(geometry.at(object_id));
                     Eigen::Vector3d p1 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
                     Eigen::Vector3d p2 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
                     spring_points_list.at(object_id).push_back(std::make_pair((q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
-                    
+
                     //TODO: add a dragging handle visualization
-                    //Visualize::scale_x(1, 2.0);
                 }
             }
         }
 
-        //apply forces 
-        for (int i = 0; i < geometry.size(); i++) {
+        //apply forces
+        for (int i = 0; i < geometry.size(); i++)
+        {
             scene_object current_object = geometry.at(i);
-            if (std::get<0>(current_object) > 0) {
-                auto force = [&](Eigen::VectorXd& f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
+            if (std::get<0>(current_object) > 0)
+            {
+                auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
                 {
                     //gravity
                     //f = -std::get<12>(current_object);
@@ -555,7 +589,7 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
                         f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
                         //std::cout<<"force:"<<std::endl;
                         //std::cout<<dV_mouse.segment<3>(3)<<std::endl;
-                     }
+                    }
                     f = P * f;
                 };
 
@@ -575,49 +609,48 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
     }
 }
 
-inline void assignment_setup(int argc, char **argv, std::vector<Eigen::VectorXd> &q_list, std::vector<Eigen::VectorXd>&qdot_list, std::vector<scene_object> &geometry)
+inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
-    //Question: 
-    // 1. q_list and qdot_list not really used here
-
-	// load setup scene
+    // load setup scene
     Eigen::Vector3d origin;
-    origin<<0.0, 0.0, 0.0;
-    add_object(geometry, "../data/cube.obj", origin, true);
+    origin << 0.0, 0.0, 0.0;
+    add_object(geometry, "../data/cube.obj", origin, false);
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;
     floor_normal << 0.0, 1.0, 0.0;
-    floor_pos << 0.0, -1.0, 0.0;    
+    floor_pos << 0.0, -4.0, 0.0;
     add_plane(floor_normal, floor_pos, geometry);
 
     Visualize::viewer().callback_key_down = key_down_callback;
-    std::cout<<"finished set up"<<std::endl;
-    std::cout<<"there is a total of "<<geometry.size()<<" pieces of geometry. \n";
+    //simulation_pause = false;
+    std::cout << "finished set up" << std::endl;
+    std::cout << "there is a total of " << geometry.size() << " pieces of geometry. \n";
 }
 
-inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &geometry){
-    
-    //load in cube 
-    Eigen::MatrixXd V, SV; 
+inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &geometry)
+{
+    //load in cube
+    Eigen::MatrixXd V, SV;
     Eigen::MatrixXi F, SF;
     int subdiv = 2;
     igl::readOBJ("../data/cube.obj", V, F);
     //subdivide by 2
-    for(int i=0; i<subdiv; ++i){
-        igl::upsample(V,F,SV,SF);
+    for (int i = 0; i < subdiv; ++i)
+    {
+        igl::upsample(V, F, SV, SF);
         V = SV;
         F = SF;
     }
     Eigen::Vector3i cluster_size;
-    cluster_size<<2,2,2;
+    cluster_size << 2, 2, 2;
     add_object_VF(geometry, SV, SF, false, cluster_size);
 
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;
     floor_normal << 0.0, 1.0, 0.0;
-    floor_pos << 0.0, -1.0, 0.0;    
+    floor_pos << 0.0, -1.0, 0.0;
     add_plane(floor_normal, floor_pos, geometry);
 
     Visualize::viewer().callback_key_down = key_down_callback;

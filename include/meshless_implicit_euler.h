@@ -18,16 +18,15 @@
 template<typename FORCE> 
 inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double mass,
                                     Eigen::MatrixXd &V0, const Eigen::Vector3d &center_of_mass0,
-                                    FORCE &force, Eigen::VectorXd &tmp_force) {
+                                    FORCE &force, Eigen::VectorXd &tmp_force, Eigen::Vector3d &center_of_masst) {
     //std::cout<<"inside meshless update function"<<std::endl;
-
     //gather forces
     force(tmp_force,q,qdot);
 
     //compute goal positions
 
     //get current center of mass
-    Eigen::Vector3d center_of_masst;
+    //Eigen::Vector3d center_of_masst;
     Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q.data(),3,q.rows()/3);
     center_of_masst = Vt.transpose().colwise().mean();
     
@@ -35,7 +34,6 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     // if(isnan(center_of_masst(0))){
     //     std::exit(1);
     // }
-
     //get q: vertex position relative to CoM at t0
     Eigen::MatrixXd P = V0.rowwise() - center_of_mass0.transpose();
     //get p: vertex position relative to current CoM 

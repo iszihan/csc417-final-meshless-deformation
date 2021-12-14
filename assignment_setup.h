@@ -25,7 +25,9 @@
 
 //Variable for geometry
 typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
-Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd> scene_object;
+Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+
+// export the obj file with these modifications: http://www.opengl-tutorial.org/beginners-tutorials/tutorial-7-model-loading/
 
 std::string data_paths[3] = { "../data/cube.obj", "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
@@ -46,7 +48,7 @@ Eigen::VectorXd tmp_force;
 Eigen::VectorXd q_tmp;
 Eigen::MatrixXd V_tmp;
 Eigen::MatrixXi F_tmp;
-Eigen::Vector3d com_tmp;
+Eigen::Vector3d com_tmp0, com_tmpt;
 int item_placement = -1;
 
 
@@ -82,8 +84,7 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
         q.segment<3>(vi * 3) += position;
 	}
 	
-    center_of_mass = V.colwise().mean();
-	
+    center_of_mass = V.colwise().mean().transpose();
     //add geometry to scene
     V_skin = V;
     F_skin = F;
@@ -110,7 +111,6 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     x0.setZero();
 
     // append everything to the corresponding list
-
     scene_object one_geometry;
     std::get<0>(one_geometry) = 1;
     std::get<1>(one_geometry) = V;
@@ -124,6 +124,12 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     std::get<9>(one_geometry) = qdot;
     std::get<10>(one_geometry) = P;
     std::get<11>(one_geometry) = gravity;
+    std::get<12>(one_geometry) = (((-V).rowwise() + center_of_mass.transpose()).rowwise().norm()).maxCoeff() * 1.5;
+    std::get<13>(one_geometry) = center_of_mass;
+
+
+
+	
 
     geometry.push_back(one_geometry);
     Visualize::add_object_to_scene(V, F, V, F, N, Eigen::RowVector3d(244, 165, 130) / 255.);
@@ -155,15 +161,18 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
         	// only check if the object is not static
         	if (std::get<0>(moving_object) >= 1)
         	{
-
+        		// check it against each other objects
                 for (unsigned int si = 0; si < geometry.size(); ++si) {
                     // do not check collision against itself
                     if (si != mi) {
+                    	// only consider if it is ball-parked to be touching
                         scene_object collision_target = geometry.at(si);
-                        // only have collision detection with planes for now others can be implemented later
-                    	if (std::get<0>(collision_target) == 0) {
-                            collision_detection(collision_points_list.at(mi), mi, si,
-                                std::get<8>(moving_object), std::get<1>(collision_target), std::get<2>(collision_target));
+                    	if (precomputation(moving_object, collision_target)){
+                    		// only have collision detection with planes for now others can be implemented later
+                            if (std::get<0>(collision_target) == 0) {
+                                collision_detection(collision_points_list.at(mi), mi, si,
+                                    std::get<8>(moving_object), std::get<1>(collision_target), std::get<2>(collision_target));
+                            }
                         }
                     }
                 }
@@ -252,12 +261,13 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                 qdot_tmp = std::get<9>(current_object);
                 V_tmp = std::get<1>(current_object);
                 F_tmp = std::get<2>(current_object);
-                com_tmp = std::get<7>(current_object);
+                com_tmp0 = std::get<7>(current_object);
 
                 
-                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, V_tmp, com_tmp, force, tmp_force);
+                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, V_tmp, com_tmp0, force, tmp_force, com_tmpt);
                 std::get<8>(geometry.at(i)) = q_tmp;
                 std::get<9>(geometry.at(i)) = qdot_tmp;
+                std::get<13>(geometry.at(i)) = com_tmpt;
             }
 		}
         if (item_placement >= 0)
@@ -357,84 +367,8 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
 }
 inline void assignment_setup(int argc, char **argv, std::vector<Eigen::VectorXd> &q_list, std::vector<Eigen::VectorXd>&qdot_list, std::vector<scene_object> &geometry)
 {
-	// load one example object just to test the new data structure
-    Eigen::VectorXd q;
-    Eigen::VectorXd qdot;
-    Eigen::VectorXd gravity;
-    Eigen::SparseMatrixd M;
-    Eigen::Vector3d center_of_mass;
-    Eigen::MatrixXd V, V_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
-    Eigen::MatrixXi F, F_skin; //faces of simulation mesh
-    Eigen::MatrixXd V_sphere, V_sphere_skin; //vertices of simulation mesh //this will hold all individual pieces of cloth, I'll load some offsets
-    Eigen::MatrixXi F_sphere, F_sphere_skin; //faces of simulation mesh
-    Eigen::SparseMatrixd N;
-    Eigen::SparseMatrixd P; 
-    //load one moving geometry data
-    igl::readOBJ("../data/cube.obj", V, F);
-    //setup simulation
-    init_state(q, qdot, V);
-    center_of_mass = V.colwise().mean();
-	
-    //add geometry to scene
-    V_skin = V;
-    F_skin = F;
-    N.resize(V.rows(), V.rows());
-    N.setIdentity();
-    Visualize::add_object_to_scene(V, F, V_skin, F_skin, N, Eigen::RowVector3d(244, 165, 130) / 255.);    
-    
-    
-    //mass matrix
-    mass_matrix_particles(M, q, mass);
-    if (M.rows() == 0)
-    {
-        std::cout<<"Mass matrix not implemented, exiting.\n";
-        exit(1);
-    }
-
-	
-    //constant gravity vector
-    gravity.resize(q.rows());
-    dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
-    //center of mass 
-   
-    // std::cout<<V<<std::endl;
-    // std::cout<<center_of_mass<<std::endl;
-
-    // //fix to the floor
-    //find_min_vertices(fixed_point_indices, V, 0.001);
-    // P.resize(q.rows(), q.rows());
-    // P.setIdentity();
-    //fixed_point_constraints(P, q.rows(), fixed_point_indices);
-    //x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
-    // //correct M, q and qdot so they are the right size
-    // q = P * q;
-    // qdot = P * qdot;
-    // M = P * M * P.transpose();
-
-    //not fixed to the floor 
-    P.resize(q.rows(), q.rows());
-    P.setIdentity();
-    x0.resize(q.size());
-    x0.setZero();
-
-    // append everything to the corresponding list
-
-    scene_object one_geometry;
-    std::get<0>(one_geometry) = 1;
-    std::get<1>(one_geometry) = V;
-    std::get<2>(one_geometry) = F;
-    std::get<3>(one_geometry) = V;
-    std::get<4>(one_geometry) = F;
-    std::get<5>(one_geometry) = N;
-    std::get<6>(one_geometry) = M;
-    std::get<7>(one_geometry) = center_of_mass;
-    std::get<8>(one_geometry) = q;
-    std::get<9>(one_geometry) = qdot;
-    std::get<10>(one_geometry) = P;
-    std::get<11>(one_geometry) = gravity;
-
-    geometry.push_back(one_geometry);
-
+	// add just a cube to the scene
+    add_object(geometry, data_paths[0], Eigen::Vector3d::Zero());
 	
     //add floor
     Eigen::Vector3d floor_normal;
@@ -442,12 +376,6 @@ inline void assignment_setup(int argc, char **argv, std::vector<Eigen::VectorXd>
     floor_normal << 0, 0.7, 0.;
     floor_pos << 0., -3.0, 0.;
     add_plane(floor_normal, floor_pos, geometry);
-	
-    //Eigen::Vector3d floor_normal2;
-    //Eigen::Vector3d floor_pos2;
-    //floor_normal2 << 1, 0.7, 0.;
-    //floor_pos2 << 0., -3.0, 0.;
-    //add_plane(floor_normal2, floor_pos, geometry);
     
     Visualize::viewer().callback_key_down = key_down_callback;
     std::cout<<"finished set up"<<std::endl;

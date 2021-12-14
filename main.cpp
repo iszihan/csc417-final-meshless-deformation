@@ -9,7 +9,7 @@ std::vector<Eigen::VectorXd> q_list;
 std::vector<Eigen::VectorXd> qdot_list;
 std::mutex mtx;
 typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
-Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd> scene_object;
+Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
 std::vector<scene_object> geometry;
 // 0 object type, 0 == plane, 1 == movable object
 // 1 V,
@@ -23,6 +23,8 @@ std::vector<scene_object> geometry;
 // 9 qdot
 // 10 P
 // 11 gravity
+// 12 radius of com
+// 13 current center of mass
 
 Eigen::VectorXd q;
 Eigen::VectorXd qdot;

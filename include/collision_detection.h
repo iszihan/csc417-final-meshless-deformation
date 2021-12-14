@@ -14,11 +14,16 @@
 //  x - world space, per-vertex collision points. Computed as any vertex that is on the "wrong side" of the floor plane
 //  n - collision normals, one for each collision point. These point away from the floor. 
 //  objs - Pairs of ids for objects involved in collisions. The first id is for the object, away from which the normal points. The second id 
-//  is for the object towards which the normal points. The floor has an id of -1. 
+//  is for the object towards which the normal points. The floor has an id of -1.
+
+typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
+    Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+
 void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
                          unsigned int moving_obj_id,
                          unsigned int still_obj_id,
                          Eigen::Ref<Eigen::VectorXd> mV, 
                          Eigen::Ref<Eigen::MatrixXd> sV, 
                          Eigen::Ref<Eigen::MatrixXi> sf);
+bool precomputation(scene_object obj1, scene_object obj2);
         

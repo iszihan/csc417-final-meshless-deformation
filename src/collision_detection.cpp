@@ -35,3 +35,34 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
         }
     }
 }
+
+bool precomputation(scene_object obj1, scene_object obj2)
+{
+    Eigen::VectorXd q1 = std::get<8>(obj1);
+    Eigen::VectorXd q2 = std::get<8>(obj2);
+    Eigen::Vector3d com1, com2;
+    double rad1, rad2;
+	
+	
+    if (std::get<0>(obj2) >= 1){
+        com1 = std::get<13>(obj1);
+        rad1 = std::get<12>(obj1);
+        com2 = std::get<13>(obj2);
+        rad2 = std::get<12>(obj2);
+        return ((com2 - com1).norm() + 0.1 <= std::min(rad1, rad2));
+    } else
+    {
+        com1 = std::get<13>(obj1);
+        rad1 = std::get<12>(obj1);
+    	Eigen::MatrixXd sV = std::get<1>(obj2);
+        Eigen::MatrixXi sF = std::get<2>(obj2);
+
+        Eigen::Vector3d pos = sV.row(0).transpose();
+        Eigen::Vector3d e10 = sV.row(sF.row(0)(1)).transpose() - sV.row(sF.row(0)(0)).transpose();
+        Eigen::Vector3d e20 = sV.row(sF.row(0)(2)).transpose() - sV.row(sF.row(0)(0)).transpose();
+        Eigen::Vector3d dir = e10.cross(e20);
+        dir = dir.normalized();
+        double dist = abs((com1 - pos).dot(dir));
+        return dist - rad1 <= 0.1;
+    }
+}

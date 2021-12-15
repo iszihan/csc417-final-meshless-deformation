@@ -19,8 +19,12 @@ bool simulation_callback() {
     
     //simulate(geometry, dt, t, mtx);
     // simulate(geometry, dt, t, mtx);
+    // while(simulating){
+	//  	simulate(geometry, dt, t, mtx);
+    //  	t += dt;
+    // }
     while(simulating){
-	 	simulate(geometry, dt, t, mtx);
+	 	simulate_clustering(geometry, dt, t);
      	t += dt;
     }
     return false;
@@ -50,12 +54,12 @@ int main(int argc, char **argv) {
     std::cout<<"Start Meshless Deformation...\n";
 
     //setup
-    assignment_setup(argc, argv, geometry);
-    //clustering_setup(argc, argv, geometry);
-
+    //assignment_setup(argc, argv, geometry);
+    clustering_setup(argc, argv, geometry);
+    
     //run simulation in seperate thread to avoid slowing down the UI
-    std::thread simulation_thread(simulation_callback);
-    simulation_thread.detach();
+    // std::thread simulation_thread(simulation_callback);
+    // simulation_thread.detach();
 
     //setup libigl viewer and activate 
     Visualize::setup(q, qdot, true);

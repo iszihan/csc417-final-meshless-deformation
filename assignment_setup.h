@@ -22,23 +22,23 @@
 #include <collision_detection.h>
 
 //variables for geometry
-typedef std::tuple<int,                           //moving or still
-                   Eigen::MatrixXd,               //V
-                   Eigen::MatrixXi,               //F
-                   Eigen::MatrixXd,               //V_skin
-                   Eigen::MatrixXi,               //F_skin
-                   Eigen::SparseMatrixd,          //N skinning matrix
-                   Eigen::SparseMatrixd,          //M
-                   Eigen::Vector3d,               //center of mass
-                   Eigen::VectorXd,               //q
-                   Eigen::VectorXd,               //qdot
-                   Eigen::SparseMatrixd,          //P
-                   Eigen::VectorXd,               //x0
-                   Eigen::VectorXd,               //gravity
-                   std::vector<std::vector<int>>, //clusters
-                   Eigen::MatrixXd                //Q = V-center_of_mass
+typedef std::tuple<int,                           //0 moving or still
+                   Eigen::MatrixXd,               //1 V
+                   Eigen::MatrixXi,               //2 F
+                   Eigen::MatrixXd,               //3 V_skin
+                   Eigen::MatrixXi,               //4 F_skin
+                   Eigen::SparseMatrixd,          //5 N skinning matrix
+                   Eigen::SparseMatrixd,          //6 M -- this is not actually used anywhere?
+                   std::vector<Eigen::Vector3d>,  //7 center of mass for clusters
+                   Eigen::VectorXd,               //8 q
+                   Eigen::VectorXd,               //9 qdot
+                   Eigen::SparseMatrixd,          //10 P
+                   Eigen::VectorXd,               //11 x0
+                   Eigen::VectorXd,               //12 gravity
+                   std::vector<std::vector<int>>, //13 clusters of pair of vertex indices and positions
+                   std::vector<Eigen::MatrixXd>   //14 Q = V-center_of_mass for clusters
                    >
-    scene_object;
+                   scene_object;
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
@@ -46,7 +46,7 @@ std::string data_paths[3] = {"../data/cube.obj",
 //material parameters
 double mass = 1.0;
 
-//scratch memory for assembly
+//scratch memory for assembly -- do we need these beside tmp_force?
 Eigen::VectorXd qdot_tmp;
 Eigen::VectorXd tmp_force;
 Eigen::VectorXd q_tmp;
@@ -59,7 +59,11 @@ Eigen::MatrixXd Q_tmp;
 int item_placement = -1;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> spring_points_list;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_points_list;
-//integration
+
+//integration method
+// 0 - rigid
+// 1 - linear 
+// 2 - quadratic
 int method = 2;
 
 //collision detection stuff
@@ -88,8 +92,6 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
     Eigen::MatrixXd Q;
 
     init_state(q, qdot, V);
-    center_of_mass = V.colwise().mean();
-    Q = V.rowwise() - center_of_mass.transpose();
 
     //skinning
     V_skin = V;
@@ -108,21 +110,16 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
     //gravity vector
     gravity.resize(q.rows(), 1);
     dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
-
+    
     if (fixed)
     {
         //fix to the floor
         std::vector<unsigned int> fixed_point_indices;
         find_min_vertices(fixed_point_indices, V, 0.001);
-        fixed_point_indices.push_back(0);
         P.resize(q.rows(), q.rows());
         P.setIdentity();
         fixed_point_constraints(P, q.rows(), fixed_point_indices);
         x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
-        //correct M, q and qdot so they are the right size
-        // q = P * q;
-        // qdot = P * qdot;
-        // M = P * M * P.transpose();
     }
     else
     {
@@ -134,12 +131,15 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
     }
 
     // form clusters [x_clusters, y_cluster, z_clusters]
+    std::vector<Eigen::Vector3d> centers_of_mass;
+    std::vector<Eigen::MatrixXd> Qs;
+    std::vector<std::vector<int>> vertex_clusters;
+    Eigen::MatrixXd V_cluster;
     Eigen::Vector3d V_max = V.colwise().maxCoeff();
     Eigen::Vector3d V_min = V.colwise().minCoeff();
     double dx = (V_max(0) - V_min(0)) / clusters(0);
     double dy = (V_max(1) - V_min(1)) / clusters(1);
     double dz = (V_max(2) - V_min(2)) / clusters(2);
-    std::vector<std::vector<int>> vertex_clusters;
     for (int ix = 0; ix < clusters(0); ++ix)
     {
         double x_min = V_min(0) + dx * ix;
@@ -152,9 +152,6 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
             {
                 double z_min = V_min(2) + dz * iz;
                 double z_max = V_min(2) + dz * (iz + 1);
-                // std::cout<<"x range:"<<x_min<<"-"<<x_max<<std::endl;
-                // std::cout<<"y range:"<<y_min<<"-"<<y_max<<std::endl;
-                // std::cout<<"z range:"<<z_min<<"-"<<z_max<<std::endl;
                 std::vector<int> curr_cluster;
                 curr_cluster.clear();
                 double tol = 1e-3;
@@ -164,19 +161,18 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
                     if (V.row(iv)(0) >= x_min - tol && V.row(iv)(0) <= x_max + tol && V.row(iv)(1) >= y_min - tol && V.row(iv)(1) <= y_max + tol && V.row(iv)(2) >= z_min - tol && V.row(iv)(2) <= z_max + tol)
                     {
                         curr_cluster.push_back(iv);
+                        V_cluster.conservativeResize(curr_cluster.size(),3);
+                        V_cluster.row(curr_cluster.size()-1) = V.row(iv);
                     }
                 }
                 vertex_clusters.push_back(curr_cluster);
+                Eigen::Vector3d curr_com = V_cluster.colwise().mean();
+                Eigen::MatrixXd curr_Q = V_cluster.rowwise() - curr_com.transpose();
+                centers_of_mass.push_back(curr_com);
+                Qs.push_back(curr_Q);
             }
         }
     }
-    // for(int i=0; i<vertex_clusters.size();++i){
-    //     std::cout<<vertex_clusters.at(i).size()<<std::endl;
-    //     for(int j=0; j<vertex_clusters.at(i).size();++j){
-    //         std::cout<<V.row(vertex_clusters.at(i).at(j))<<std::endl;
-    //     }
-    // }
-
     // append everything to the corresponding list
     scene_object one_geometry;
     std::get<0>(one_geometry) = 1;
@@ -186,14 +182,14 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
     std::get<4>(one_geometry) = F;
     std::get<5>(one_geometry) = N;
     std::get<6>(one_geometry) = M;
-    std::get<7>(one_geometry) = center_of_mass;
+    std::get<7>(one_geometry) = centers_of_mass;
     std::get<8>(one_geometry) = q;
     std::get<9>(one_geometry) = qdot;
     std::get<10>(one_geometry) = P;
     std::get<11>(one_geometry) = x0;
     std::get<12>(one_geometry) = gravity;
     std::get<13>(one_geometry) = vertex_clusters;
-    std::get<14>(one_geometry) = Q;
+    std::get<14>(one_geometry) = Qs;
     geometry.push_back(one_geometry);
     Visualize::add_object_to_scene(V, F, V, F, N, Eigen::RowVector3d(244, 165, 130) / 255.);
 }
@@ -204,13 +200,13 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     Eigen::VectorXd qdot;
     Eigen::VectorXd gravity;
     Eigen::SparseMatrixd M;
-    Eigen::Vector3d center_of_mass;
+    std::vector<Eigen::Vector3d> centers_of_mass;
+    std::vector<Eigen::MatrixXd> Qs;
     Eigen::MatrixXd V, V_skin; //vertices of simulation mesh
     Eigen::MatrixXi F, F_skin; //faces of simulation mesh
     Eigen::SparseMatrixd N;
     Eigen::SparseMatrixd P;
     Eigen::VectorXd x0;
-    Eigen::MatrixXd Q;
 
     igl::readOBJ(file_path, V, F);
 
@@ -219,8 +215,6 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     {
         q.segment<3>(vi * 3) += position;
     }
-    center_of_mass = V.colwise().mean();
-    Q = V.rowwise() - center_of_mass.transpose();
 
     //skinning
     V_skin = V;
@@ -239,7 +233,6 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     //gravity vector
     gravity.resize(q.rows(), 1);
     dV_cloth_gravity_dq(gravity, M, Eigen::Vector3d(0, -9.8, 0));
-
     if (fixed)
     {
         //fix to the floor
@@ -250,10 +243,6 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
         P.setIdentity();
         fixed_point_constraints(P, q.rows(), fixed_point_indices);
         x0 = q - P.transpose() * P * q; //vector x0 contains position of all fixed nodes, zero for everything else
-        //correct M, q and qdot so they are the right size
-        // q = P * q;
-        // qdot = P * qdot;
-        // M = P * M * P.transpose();
     }
     else
     {
@@ -270,7 +259,12 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     std::iota(all_vertices.begin(), all_vertices.end(), V.rows());
     vertex_clusters.push_back(all_vertices);
 
-    // append everything to the corresponding list
+    Eigen::Vector3d center_of_mass = V.colwise().mean();
+    Eigen::MatrixXd Q = V.rowwise() - center_of_mass.transpose();
+    centers_of_mass.push_back(center_of_mass);
+    Qs.push_back(Q);
+
+    //append everything to the corresponding list
     scene_object one_geometry;
     std::get<0>(one_geometry) = 1;
     std::get<1>(one_geometry) = V;
@@ -279,14 +273,14 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     std::get<4>(one_geometry) = F;
     std::get<5>(one_geometry) = N;
     std::get<6>(one_geometry) = M;
-    std::get<7>(one_geometry) = center_of_mass;
+    std::get<7>(one_geometry) = centers_of_mass;
     std::get<8>(one_geometry) = q;
     std::get<9>(one_geometry) = qdot;
     std::get<10>(one_geometry) = P;
     std::get<11>(one_geometry) = x0;
     std::get<12>(one_geometry) = gravity;
     std::get<13>(one_geometry) = vertex_clusters;
-    std::get<14>(one_geometry) = Q;
+    std::get<14>(one_geometry) = Qs;
     geometry.push_back(one_geometry);
     Visualize::add_object_to_scene(V, F, V, F, N, Eigen::RowVector3d(244, 165, 130) / 255.);
 }
@@ -326,7 +320,7 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     std::get<4>(one_geometry) = F_floor;
     std::get<5>(one_geometry) = N;
     std::get<6>(one_geometry) = M;
-    std::get<7>(one_geometry) = Eigen::Vector3d::Zero();
+    std::get<7>(one_geometry).push_back(Eigen::Vector3d::Zero());
     std::get<8>(one_geometry) = Eigen::Vector3d::Zero();
     std::get<9>(one_geometry) = Eigen::Vector3d::Zero();
     geometry.push_back(one_geometry);
@@ -441,13 +435,11 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
 
                 q_tmp = std::get<8>(current_object);
                 qdot_tmp = std::get<9>(current_object);
-                V_tmp = std::get<1>(current_object);
-                F_tmp = std::get<2>(current_object);
-                com_tmp = std::get<7>(current_object);
-                P_tmp = std::get<10>(current_object);
-                x0_tmp = std::get<11>(current_object);
-                Q_tmp = std::get<14>(current_object);
-                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, P_tmp, x0_tmp, Q_tmp, std::get<13>(current_object), method, force, tmp_force);
+                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, 
+                                        std::get<10>(current_object), std::get<11>(current_object), 
+                                        std::get<7>(current_object), std::get<14>(current_object), 
+                                        std::get<13>(current_object),
+                                        method, force, tmp_force);
                 std::get<8>(geometry.at(i)) = q_tmp;
                 std::get<9>(geometry.at(i)) = qdot_tmp;
             }
@@ -473,7 +465,7 @@ inline void draw(std::vector<scene_object> geometry, double t)
         scene_object current_object = geometry.at(i);
         if (std::get<0>(current_object) > 0)
         {
-            Visualize::update_vertex_positions(i, std::get<10>(current_object).transpose() * std::get<8>(current_object) + std::get<11>(current_object));
+            Visualize::update_vertex_positions(i, std::get<10>(current_object).transpose() * std::get<10>(current_object) * std::get<8>(current_object) + std::get<11>(current_object));
         }
     }
 }
@@ -538,6 +530,7 @@ bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int
 
 inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, double t)
 {
+    //std::cout<<"simulating clustering"<<std::endl;
     //Interaction spring
     if (!simulation_pause)
     {
@@ -563,7 +556,6 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
                     Eigen::Vector3d p1 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
                     Eigen::Vector3d p2 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
                     spring_points_list.at(object_id).push_back(std::make_pair((q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
-
                     //TODO: add a dragging handle visualization
                 }
             }
@@ -595,13 +587,11 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
 
                 q_tmp = std::get<8>(current_object);
                 qdot_tmp = std::get<9>(current_object);
-                V_tmp = std::get<1>(current_object);
-                F_tmp = std::get<2>(current_object);
-                com_tmp = std::get<7>(current_object);
-                P_tmp = std::get<10>(current_object);
-                x0_tmp = std::get<11>(current_object);
-                Q_tmp = std::get<14>(current_object);
-                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, P_tmp, x0_tmp, Q_tmp, std::get<13>(current_object), method, force, tmp_force);
+                meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, 
+                                        std::get<10>(current_object), std::get<11>(current_object), 
+                                        std::get<7>(current_object), std::get<14>(current_object), 
+                                        std::get<13>(current_object),
+                                        method, force, tmp_force);
                 std::get<8>(geometry.at(i)) = q_tmp;
                 std::get<9>(geometry.at(i)) = qdot_tmp;
             }
@@ -630,7 +620,7 @@ inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &g
     }
     Eigen::Vector3i cluster_size;
     cluster_size << 1, 1, 1;
-    add_object_VF(geometry, SV, SF, false, cluster_size);
+    add_object_VF(geometry, V, F, false, cluster_size);
 
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
@@ -661,7 +651,7 @@ inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &g
     }
     Eigen::Vector3i cluster_size;
     cluster_size << 2, 2, 2;
-    add_object_VF(geometry, SV, SF, false, cluster_size);
+    add_object_VF(geometry, SV, SF, true, cluster_size);
 
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
@@ -671,5 +661,6 @@ inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &g
     add_plane(floor_normal, floor_pos, geometry);
 
     Visualize::viewer().callback_key_down = key_down_callback;
+    std::cout<<"finished setting up clustering"<<std::endl;
 }
 #endif

@@ -1,52 +1,35 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
-#include <assignment_setup.h>
 #include <visualization.h>
+#include <assignment_setup.h>
 
 //Simulation State
-std::vector<Eigen::VectorXd> q_list;
-std::vector<Eigen::VectorXd> qdot_list;
 std::mutex mtx;
 //typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
 //Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
 
-typedef std::tuple<int,                           //moving or still
-    Eigen::MatrixXd,               //V
-    Eigen::MatrixXi,               //F
-    Eigen::MatrixXd,               //V_skin
-    Eigen::MatrixXi,               //F_skin
-    Eigen::SparseMatrixd,          //N skinning matrix
-    Eigen::SparseMatrixd,          //M
-    Eigen::Vector3d,               //center of mass
-    Eigen::VectorXd,               //q
-    Eigen::VectorXd,               //qdot
-    Eigen::SparseMatrixd,          //P
-    Eigen::VectorXd,               //x0
-    Eigen::VectorXd,               //gravity
-    std::vector<std::vector<int>>, //clusters
-    Eigen::MatrixXd,               //Q = V-center_of_mass
-    double,                         //distance to com
-    Eigen::Vector3d,                 // com that moves with time
-	std::vector<std::vector<int>>   // vertex face list
+typedef std::tuple<int,                           //0 moving or still
+	               Eigen::MatrixXd,               //1 V
+	               Eigen::MatrixXi,               //2 F
+	               Eigen::MatrixXd,               //3 V_skin
+	               Eigen::MatrixXi,               //4 F_skin
+	               Eigen::SparseMatrixd,          //5 N skinning matrix
+	               Eigen::SparseMatrixd,          //6 M -- this is not actually used anywhere?
+	               std::vector<Eigen::Vector3d>,  //7 center of mass for clusters
+	               Eigen::VectorXd,               //8 q
+	               Eigen::VectorXd,               //9 qdot
+	               Eigen::SparseMatrixd,          //10 P
+	               Eigen::VectorXd,               //11 x0
+	               Eigen::VectorXd,               //12 gravity
+	               std::vector<std::vector<int>>, //13 clusters of pair of vertex indices and positions
+	               std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
+	               double,                        //15 distance to com
+	               Eigen::Vector3d,                //16 com that moves with time
+					std::vector<std::vector<int>>   //17  vertex face list
 > scene_object;
 
 std::vector<scene_object> geometry;
-
-// 0 object type, 0 == plane, 1 == movable object
-// 1 V,
-// 2 F,
-// 3 skinning V,
-// 4 skinning F,
-// 5 N,
-// 6 M,
-// 7 com,
-// 8 q,
-// 9 qdot
-// 10 P
-// 11 gravity
-// 12 radius of com
-// 13 current center of mass
 
 Eigen::VectorXd q;
 Eigen::VectorXd qdot;
@@ -57,11 +40,9 @@ double dt = 0.0001; //time step
 //simulation loop
 bool simulating = true;
 bool simulation_callback() {
-    
-    //simulate(geometry, dt, t, mtx);
-    // simulate(geometry, dt, t, mtx);
     while(simulating){
-	 	simulate(geometry, dt, t, mtx);
+	 	//simulate_clustering(geometry, dt, t);
+        simulate(geometry, dt, t, mtx);
      	t += dt;
     }
     return false;
@@ -93,7 +74,7 @@ int main(int argc, char **argv) {
     //setup
     assignment_setup(argc, argv, geometry);
     //clustering_setup(argc, argv, geometry);
-
+    
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback);
     simulation_thread.detach();

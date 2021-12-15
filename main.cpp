@@ -52,8 +52,8 @@ int main(int argc, char **argv) {
     clustering_setup(argc, argv, geometry);
     
     //run simulation in seperate thread to avoid slowing down the UI
-    // std::thread simulation_thread(simulation_callback);
-    // simulation_thread.detach();
+    std::thread simulation_thread(simulation_callback);
+    simulation_thread.detach();
 
     //setup libigl viewer and activate 
     Visualize::setup(q, qdot, true);

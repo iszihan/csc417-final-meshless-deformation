@@ -28,11 +28,12 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                                     std::vector<std::vector<int>> clusters, 
                                     int method, FORCE &force, Eigen::VectorXd &tmp_force) {
 
-    std::cout<<"inside integration..."<<std::endl;
-
+    //std::cout<<"inside integration..."<<std::endl;
     //gather forces
     force(tmp_force,q,qdot);
-    
+    //std::cout<<"after force..."<<std::endl;
+    //std::cout<<tmp_force<<std::endl;
+
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
     Eigen::VectorXd q_tmp = q + dt * qdot_tmp;

@@ -39,7 +39,6 @@ typedef std::tuple<int,                           //0 moving or still
                    double,                        //15 distance to com
                    Eigen::Vector3d                //16 com that moves with time
                    >scene_object;
-                   
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
@@ -65,7 +64,7 @@ std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_poi
 // 0 - rigid
 // 1 - linear 
 // 2 - quadratic
-int method = 2;
+int method = 0;
 
 //collision detection stuff
 bool collision_detection_on = false;
@@ -576,7 +575,7 @@ bool key_down_callback(igl::opengl::glfw::Viewer& viewer, unsigned char key, int
 
 inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, double t)
 {
-    //std::cout<<"simulating clustering"<<std::endl;
+    std::cout<<"simulating clustering"<<std::endl;
     //Interaction spring
     if (!simulation_pause)
     {
@@ -598,11 +597,11 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
             {
                 for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                 {
+                    std::cout<<"has dragging"<<std::endl;
                     Eigen::VectorXd q = std::get<8>(geometry.at(object_id));
                     Eigen::Vector3d p1 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
                     Eigen::Vector3d p2 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
                     spring_points_list.at(object_id).push_back(std::make_pair((q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
-                    //TODO: add a dragging handle visualization
                 }
             }
         }
@@ -616,7 +615,8 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
                 auto force = [&](Eigen::VectorXd &f, Eigen::Ref<const Eigen::VectorXd> q2, Eigen::Ref<const Eigen::VectorXd> qdot2)
                 {
                     //gravity
-                    //f = -std::get<12>(current_object);
+                    f = -std::get<12>(current_object);
+                    f.setZero();
                     Eigen::SparseMatrixd P = std::get<10>(current_object);
                     std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points = spring_points_list.at(i);
                     for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
@@ -628,7 +628,7 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
                         //std::cout<<"force:"<<std::endl;
                         //std::cout<<dV_mouse.segment<3>(3)<<std::endl;
                     }
-                    f = P * f;
+                    //f = P * f; //Q: do we zero out forces on fixed points?
                 };
 
                 q_tmp = std::get<8>(current_object);
@@ -673,7 +673,7 @@ inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &g
     //load in cube
     Eigen::MatrixXd V, SV;
     Eigen::MatrixXi F, SF;
-    int subdiv = 2;
+    int subdiv = 3;
     igl::readOBJ("../data/cube.obj", V, F);
     //subdivide by 2
     for (int i = 0; i < subdiv; ++i)
@@ -683,7 +683,7 @@ inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &g
         F = SF;
     }
     Eigen::Vector3i cluster_size;
-    cluster_size << 2, 2, 2;
+    cluster_size << 1, 3, 1;
     add_object_VF(geometry, SV, SF, true, cluster_size);
 
     Eigen::Vector3d floor_normal;

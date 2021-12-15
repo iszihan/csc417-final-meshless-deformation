@@ -27,7 +27,8 @@ typedef std::tuple<int,                           //moving or still
     std::vector<std::vector<int>>, //clusters
     Eigen::MatrixXd,               //Q = V-center_of_mass
     double,                         //distance to com
-    Eigen::Vector3d                 // com that moves with time
+    Eigen::Vector3d,                 // com that moves with time
+	std::vector<std::vector<int>>   // vertex face list
 > scene_object;
 
 std::vector<scene_object> geometry;

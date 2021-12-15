@@ -563,8 +563,10 @@ typedef std::tuple<int,                           //moving or still
                    std::vector<std::vector<int>>, //clusters
                    Eigen::MatrixXd,               //Q = V-center_of_mass
 				   double,                         //distance to com
-				   Eigen::Vector3d                 // com that moves with time
-                   > scene_object;
+				   Eigen::Vector3d,                 // com that moves with time
+				   std::vector<std::vector<int>>     // vertex face list
+> scene_object;
+
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
@@ -1183,7 +1185,6 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
 
 inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
-<<<<<<< HEAD
 
     Eigen::Vector3d origin;
     origin << 0.0, 5, 0.0;
@@ -1191,29 +1192,6 @@ inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &g
 
     origin << 0.0, 0, 0.0;
     add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
-=======
-    // // load setup scene
-    // Eigen::Vector3d origin;
-    // origin << 0.0, 0.0, 0.0;
-    // add_object(geometry, "../data/cube.obj", origin, false);
-
-    //load in cube
-    Eigen::MatrixXd V, SV;
-    Eigen::MatrixXi F, SF;
-    int subdiv = 2;
-    igl::readOBJ("../data/cube.obj", V, F);
-    //subdivide by 2
-    for (int i = 0; i < subdiv; ++i)
-    {
-        igl::upsample(V, F, SV, SF);
-        V = SV;
-        F = SF;
-    }
-    Eigen::Vector3i cluster_size;
-    cluster_size << 1, 1, 1;
-    add_object_VF(geometry, SV, SF, false, cluster_size);
-
->>>>>>> ca1c9d8c1ad74c70a4cca7a2297c4639fe0315f6
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;

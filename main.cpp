@@ -1,28 +1,22 @@
 #include <iostream>
 #include <thread>
 #include <mutex>
-#include <assignment_setup.h>
 #include <visualization.h>
+#include <assignment_setup.h>
 
 //Simulation State
 std::mutex mtx;
 std::vector<scene_object> geometry;
+
 Eigen::VectorXd q;
 Eigen::VectorXd qdot;
-
+//simulation time and time step
 double t = 0; //simulation time 
-double dt = 0.00001; //time step
+double dt = 0.0001; //time step
 
 //simulation loop
 bool simulating = true;
 bool simulation_callback() {
-    
-    //simulate(geometry, dt, t, mtx);
-    // simulate(geometry, dt, t, mtx);
-    // while(simulating){
-	//  	simulate(geometry, dt, t, mtx);
-    //  	t += dt;
-    // }
     while(simulating){
 	 	simulate_clustering(geometry, dt, t);
      	t += dt;

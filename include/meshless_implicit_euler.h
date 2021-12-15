@@ -46,7 +46,6 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::Vector3d center_of_masst;
         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q_tmp.data(),3,q_tmp.rows()/3);
         center_of_masst = Vt.transpose().colwise().mean();
-
         //get p: vertex position relative to current CoM 
         Eigen::MatrixXd _Q = Qs.at(0);
         Eigen::MatrixXd _P = Vt.transpose().rowwise() - center_of_masst.transpose();
@@ -75,6 +74,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             A = A / std::cbrt(A.determinant());
             T = beta * A + (1-beta) * R;
             transformedP = (T * _Q.transpose()).transpose();
+            A = A / std::cbrt(A.determinant());
 
         }else if(method == 2){
             //quadratic

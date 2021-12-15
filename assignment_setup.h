@@ -21,7 +21,6 @@
 #include <mutex>
 #include <collision_detection.h>
 
-//variables for geometry
 typedef std::tuple<int,                           //0 moving or still
                    Eigen::MatrixXd,               //1 V
                    Eigen::MatrixXi,               //2 F
@@ -36,9 +35,11 @@ typedef std::tuple<int,                           //0 moving or still
                    Eigen::VectorXd,               //11 x0
                    Eigen::VectorXd,               //12 gravity
                    std::vector<std::vector<int>>, //13 clusters of pair of vertex indices and positions
-                   std::vector<Eigen::MatrixXd>   //14 Q = V-center_of_mass for clusters
-                   >
-                   scene_object;
+                   std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
+                   double,                        //15 distance to com
+                   Eigen::Vector3d                //16 com that moves with time
+                   >scene_object;
+                   
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
                              "../data/cube.obj"};
@@ -194,7 +195,7 @@ inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &
     Visualize::add_object_to_scene(V, F, V, F, N, Eigen::RowVector3d(244, 165, 130) / 255.);
 }
 
-inline void add_object(std::vector<scene_object> &geometry, std::string file_path, Eigen::Vector3d position, bool fixed)
+inline void add_object(std::vector<scene_object>& geometry, std::string file_path, Eigen::Vector3d position, bool fixed)
 {
     Eigen::VectorXd q;
     Eigen::VectorXd qdot;
@@ -281,11 +282,14 @@ inline void add_object(std::vector<scene_object> &geometry, std::string file_pat
     std::get<12>(one_geometry) = gravity;
     std::get<13>(one_geometry) = vertex_clusters;
     std::get<14>(one_geometry) = Qs;
+    double radius = ((V.rowwise() - center_of_mass.transpose()).rowwise().norm()).maxCoeff() * 1.5;
+    std::get<15>(one_geometry) = radius;
+    std::get<16>(one_geometry) = center_of_mass;
+
     geometry.push_back(one_geometry);
     Visualize::add_object_to_scene(V, F, V, F, N, Eigen::RowVector3d(244, 165, 130) / 255.);
 }
-
-inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, std::vector<scene_object> &geometry)
+inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, std::vector<scene_object>& geometry)
 {
     Eigen::MatrixXd V_floor;
     Eigen::MatrixXi F_floor;
@@ -325,6 +329,46 @@ inline void add_plane(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     std::get<9>(one_geometry) = Eigen::Vector3d::Zero();
     geometry.push_back(one_geometry);
 }
+inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, std::vector<scene_object>& geometry)
+{
+    Eigen::MatrixXd V_floor;
+    Eigen::MatrixXi F_floor;
+    Eigen::SparseMatrixd N;
+    igl::readOBJ("../data/plane.obj", V_floor, F_floor);
+    //make it bigger
+    V_floor *= 10.0;
+    //skinning
+    N.resize(V_floor.rows(), V_floor.rows());
+    N.setIdentity();
+    //rotate plane
+    Eigen::Vector3d n0;
+    n0 << 0, 1, 0;
+    floor_normal.normalize();
+    float angle = std::acos(n0.dot(floor_normal)) + 0.15;
+    Eigen::Vector3d axis = n0.cross(floor_normal);
+    Eigen::Matrix3d floor_R = Eigen::AngleAxisd(angle, axis).matrix();
+    //translate plane
+    for (unsigned int iv = 0; iv < V_floor.rows(); ++iv)
+    {
+        Eigen::Vector3d rotated = floor_R * V_floor.row(iv).transpose();
+        V_floor.row(iv) = (rotated + floor_pos + Eigen::Vector3d(0., -0.01, 0.)).transpose();
+    }
+
+    Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N, Eigen::RowVector3d(64, 165, 130) / 255.);
+    scene_object one_geometry;
+    Eigen::SparseMatrixd M;
+    std::get<0>(one_geometry) = -1;
+    std::get<1>(one_geometry) = V_floor;
+    std::get<2>(one_geometry) = F_floor;
+    std::get<3>(one_geometry) = V_floor;
+    std::get<4>(one_geometry) = F_floor;
+    std::get<5>(one_geometry) = N;
+    std::get<6>(one_geometry) = M;
+    std::get<7>(one_geometry).push_back(Eigen::Vector3d::Zero());
+    std::get<8>(one_geometry) = Eigen::Vector3d::Zero();
+    std::get<9>(one_geometry) = Eigen::Vector3d::Zero();
+    geometry.push_back(one_geometry);
+}
 
 inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx)
 {
@@ -349,7 +393,6 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
         {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
-
             scene_object moving_object = geometry.at(mi);
             // only check if the object is not static
             if (std::get<0>(moving_object) >= 1)
@@ -360,19 +403,18 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                     if (si != mi)
                     {
                         scene_object collision_target = geometry.at(si);
-                        // only have collision detection with planes for now others can be implemented later
-                        if (std::get<0>(collision_target) == 0)
-                        {
+                    	// only do collision compute if they overlapps
+                        if (precomputation(moving_object, collision_target)) {
+                            // only have collision detection with planes for now others can be implemented later
                             //std::cout << "checking collision" << std::endl;
-                            collision_detection(collision_points_list.at(mi), mi, si,
-                                                std::get<8>(moving_object), std::get<1>(collision_target), std::get<2>(collision_target));
+                            collision_detection(collision_points_list.at(mi), std::get<0>(moving_object), std::get<0>(collision_target),
+                                moving_object, collision_target);
                         }
                     }
                 }
             }
-            //std::cout << collision_points_list.at(mi).size() << std::endl;
-        }
 
+        }
         Eigen::Vector3d mouse;
         Eigen::Vector6d dV_mouse;
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
@@ -432,7 +474,8 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
 
                     f = P * f;
                 };
-
+                Eigen::Vector3d comt;
+            	
                 q_tmp = std::get<8>(current_object);
                 qdot_tmp = std::get<9>(current_object);
                 meshless_implicit_euler(q_tmp, qdot_tmp, dt, mass, 
@@ -442,6 +485,7 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                                         method, force, tmp_force);
                 std::get<8>(geometry.at(i)) = q_tmp;
                 std::get<9>(geometry.at(i)) = qdot_tmp;
+                std::get<16>(geometry.at(i)) = comt;
             }
         }
 
@@ -449,6 +493,8 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
         {
             mtx.lock();
             Eigen::Vector3d pos = Visualize::mouse_world();
+            pos(1) = 3.0;
+            pos(2) = 0.0;
             //pos(1) = std::min(pos(1), 3.0);
             add_object(geometry, data_paths[item_placement], pos, false);
             item_placement = -1;
@@ -470,7 +516,7 @@ inline void draw(std::vector<scene_object> geometry, double t)
     }
 }
 
-bool key_down_callback(igl::opengl::glfw::Viewer &viewer, unsigned char key, int modifiers)
+bool key_down_callback(igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifiers)
 {
     if (key == 'N')
     {
@@ -601,39 +647,26 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
 
 inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
-    // // load setup scene
-    // Eigen::Vector3d origin;
-    // origin << 0.0, 0.0, 0.0;
-    // add_object(geometry, "../data/cube.obj", origin, false);
 
-    //load in cube
-    Eigen::MatrixXd V, SV;
-    Eigen::MatrixXi F, SF;
-    int subdiv = 2;
-    igl::readOBJ("../data/cube.obj", V, F);
-    //subdivide by 2
-    for (int i = 0; i < subdiv; ++i)
-    {
-        igl::upsample(V, F, SV, SF);
-        V = SV;
-        F = SF;
-    }
-    Eigen::Vector3i cluster_size;
-    cluster_size << 1, 1, 1;
-    add_object_VF(geometry, V, F, false, cluster_size);
+    Eigen::Vector3d origin;
+    origin << 0.0, 5, 0.0;
+    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
 
+    origin << 0.0, 0, 0.0;
+    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;
     floor_normal << 0.0, 1.0, 0.0;
     floor_pos << 0.0, -4.0, 0.0;
-    add_plane(floor_normal, floor_pos, geometry);
-
+    //add_plane(floor_normal, floor_pos, geometry);
+    add_floor(floor_normal, floor_pos, geometry);
     Visualize::viewer().callback_key_down = key_down_callback;
     //simulation_pause = false;
     std::cout << "finished set up" << std::endl;
     std::cout << "there is a total of " << geometry.size() << " pieces of geometry. \n";
 }
+
 
 inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
@@ -658,7 +691,8 @@ inline void clustering_setup(int argc, char **argv, std::vector<scene_object> &g
     Eigen::SparseMatrixd N;
     floor_normal << 0.0, 1.0, 0.0;
     floor_pos << 0.0, -1.0, 0.0;
-    add_plane(floor_normal, floor_pos, geometry);
+    //add_plane(floor_normal, floor_pos, geometry);
+    add_floor(floor_normal, floor_pos, geometry);
 
     Visualize::viewer().callback_key_down = key_down_callback;
     std::cout<<"finished setting up clustering"<<std::endl;

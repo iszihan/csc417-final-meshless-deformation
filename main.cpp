@@ -57,13 +57,11 @@ double dt = 0.0001; //time step
 bool simulating = true;
 bool simulation_callback() {
     
-    //simulate(q, qdot, dt, t);
-    //simulate(q, qdot, dt, t);
-    //simulate(q, qdot, dt, t);
-
-    while(simulating) {
-		simulate(geometry, dt, t, mtx);
-    	t += dt;
+    //simulate(geometry, dt, t, mtx);
+    // simulate(geometry, dt, t, mtx);
+    while(simulating){
+	 	simulate(geometry, dt, t, mtx);
+     	t += dt;
     }
     return false;
 }

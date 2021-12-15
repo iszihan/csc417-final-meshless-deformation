@@ -24,7 +24,7 @@ template<typename FORCE>
 inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double mass,
                                     Eigen::SparseMatrixd &P, Eigen::VectorXd &x0,
                                     Eigen::MatrixXd &_Q, std::vector<std::vector<int>> clusters, int method,
-                                    FORCE &force, Eigen::VectorXd &tmp_force) {
+                                    FORCE &force, Eigen::VectorXd &tmp_force, Eigen::Vector3d & comt) {
     //gather forces
     force(tmp_force,q,qdot);
     //std::cout<<tmp_force<<std::endl;
@@ -41,7 +41,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::Vector3d center_of_masst;
         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(q_tmp.data(),3,q_tmp.rows()/3);
         center_of_masst = Vt.transpose().colwise().mean();
-    	
+        comt = center_of_masst;
         //get p: vertex position relative to current CoM 
         Eigen::MatrixXd _P = Vt.transpose().rowwise() - center_of_masst.transpose();
         Eigen::Matrix3d Aqq = (mass * _Q.transpose() * _Q).inverse(); // 3 x 3

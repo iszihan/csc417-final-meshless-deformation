@@ -11,21 +11,24 @@ std::mutex mtx;
 //typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
 //Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
 
-typedef std::tuple<int, //moving or still
-    Eigen::MatrixXd, //V 
-    Eigen::MatrixXi, //F
-    Eigen::MatrixXd, //V_skin
-    Eigen::MatrixXi, //F_skin
-    Eigen::SparseMatrixd, //N skinning matrix
-    Eigen::SparseMatrixd, //M
-    Eigen::Vector3d, //center of mass
-    Eigen::VectorXd, //q
-    Eigen::VectorXd, //qdot
-    Eigen::SparseMatrixd, //P
-    Eigen::VectorXd, //x0
-    Eigen::VectorXd, //gravity
+typedef std::tuple<int,                           //moving or still
+    Eigen::MatrixXd,               //V
+    Eigen::MatrixXi,               //F
+    Eigen::MatrixXd,               //V_skin
+    Eigen::MatrixXi,               //F_skin
+    Eigen::SparseMatrixd,          //N skinning matrix
+    Eigen::SparseMatrixd,          //M
+    Eigen::Vector3d,               //center of mass
+    Eigen::VectorXd,               //q
+    Eigen::VectorXd,               //qdot
+    Eigen::SparseMatrixd,          //P
+    Eigen::VectorXd,               //x0
+    Eigen::VectorXd,               //gravity
     std::vector<std::vector<int>>, //clusters
-    Eigen::MatrixXd> scene_object;  //Q = V-center_of_mass
+    Eigen::MatrixXd,               //Q = V-center_of_mass
+    double,                         //distance to com
+    Eigen::Vector3d                 // com that moves with time
+> scene_object;
 
 std::vector<scene_object> geometry;
 
@@ -48,7 +51,7 @@ Eigen::VectorXd q;
 Eigen::VectorXd qdot;
 //simulation time and time step
 double t = 0; //simulation time 
-double dt = 0.00001; //time step
+double dt = 0.0001; //time step
 
 //simulation loop
 bool simulating = true;

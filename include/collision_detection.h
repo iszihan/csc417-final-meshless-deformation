@@ -37,7 +37,7 @@ typedef std::tuple<int,                           //0 moving or still
 	std::vector<std::vector<int>>   //17  vertex face list
 > scene_object;
 
-void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
+void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,
                          scene_object obj1, scene_object obj2);

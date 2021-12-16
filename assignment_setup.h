@@ -60,7 +60,9 @@ Eigen::VectorXd x0_tmp;
 Eigen::MatrixXd Q_tmp;
 int item_placement = -1;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> spring_points_list;
-std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_points_list;
+//std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_points_list;
+std::vector<std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>>> collision_points_list; // 0=point on the surface of collision target, 1=vertex normal, 2=vertex index
+
 
 //integration method
 // 0 - rigid
@@ -76,7 +78,7 @@ int item_type = 0;
 
 //selection spring
 double lspring = 0.1;
-double k_selected = 1e5;
+double k_selected = 1e4;
 double k_collision = 1e5;
 
 inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &V, Eigen::MatrixXi &F, bool fixed, Eigen::Vector3i clusters)
@@ -388,7 +390,7 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
         for (int i = 0; i < geometry.size(); i++)
         {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
-            std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
+            std::vector < std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> collision_points_tmp;
             spring_points_list.push_back(spring_points_tmp);
             collision_points_list.push_back(collision_points_tmp);
         }
@@ -413,7 +415,7 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                         if (precomputation(moving_object, collision_target)) {
                             // only have collision detection with planes for now others can be implemented later
                             //std::cout << "checking collision" << std::endl;
-                            collision_detection(collision_points_list.at(mi), std::get<0>(moving_object), std::get<0>(collision_target),
+                            collision_detection(collision_points_list.at(mi), mi, si,
                                 moving_object, collision_target);
                         }
                     }
@@ -467,15 +469,20 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                     //collision force
                     for (unsigned int ci = 0; ci < collision_points_list.at(i).size(); ci++)
                     {
-                        //dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, (P.transpose() * q2 + x0).segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-                        dV_spring_particle_particle_dq(dV_collide, collision_points_list.at(i)[ci].first, (q2 + std::get<11>(current_object)).segment<3>(3 * collision_points_list.at(i)[ci].second), 0.0, k_collision);
-                        //std::cout << "q1:" << collision_points[ci].first << std::endl;
-                        //std::cout << "q2:" << (q2 + x0).segment<3>(3 * collision_points[ci].second) << std::endl;
-                        f.segment<3>(3 * collision_points_list.at(i)[ci].second) += dV_collide.segment<3>(3);
-                        //std::cout << "added force:" << std::endl;
-                        //std::cout << dV_collide.segment<3>(3) << std::endl;
-                        //std::cout << "current force:" << std::endl;
-                        //std::cout << f.segment<3>(3 * collision_points[ci].second) << std::endl;
+                        Eigen::Vector3d repulsive_force, pt, pt_projected, target_dir, ptdot, pt2dot;
+                        pt_projected = std::get<0>(collision_points_list.at(i).at(ci));
+                        pt = std::get<8>(current_object).segment<3>(std::get<2>(collision_points_list.at(i).at(ci)) * 3);
+                        ptdot = std::get<9>(current_object).segment<3>(std::get<2>(collision_points_list.at(i).at(ci)) * 3);
+                        int obj2_vertex_id_velocity = std::get<3>(collision_points_list.at(i).at(ci));
+                        pt2dot = std::get<9>(geometry.at(std::get<4>(collision_points_list.at(i).at(ci)))).segment<3>(obj2_vertex_id_velocity * 3);
+                        target_dir = std::get<1>(collision_points_list.at(i).at(ci)).normalized(); // this is made negative, so that it becomes the direction the repulsive force should go to
+                        double d = abs((pt - pt_projected).dot(-target_dir));
+                        double force_magnitude = d * k_collision - 5000 * (ptdot.dot(-target_dir) - pt2dot.dot(-target_dir));
+                        //-(ptdot.dot(-target_dir) - pt2dot.dot(-target_dir))
+                        //repulsive_force = -std::min(d, vt) * target_dir;
+                        repulsive_force = force_magnitude * (-target_dir); // this will be in the direction where obj1 will be bounced to
+                    	
+                    	f.segment<3>(3 * std::get<2>(collision_points_list.at(i).at(ci))) += repulsive_force;
                     }
 
                     f = P * f;
@@ -657,8 +664,9 @@ inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &g
 {
 
     Eigen::Vector3d origin;
-    origin << 0.0, 5, 0.0;
-    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
+    origin << 0.0, 5, 1;
+    //add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
+    add_object(geometry, "../data/cube.obj", origin, false);
 
     origin << 0.0, 0, 0.0;
     add_object(geometry, "../data/cube.obj", origin, false);

@@ -85,7 +85,7 @@ bool ray_triangle_intersect(
     ////////////////////////////////////////////////////////////////////////////
 }
 
-void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
+void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,
 						 scene_object obj1, scene_object obj2){        
@@ -97,7 +97,7 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
     Eigen::MatrixXd sV = std::get<1>(obj2);
     Eigen::MatrixXi sF = std::get<2>(obj2);
 	
-    if (still_obj_type_id == 0) {
+    if (std::get<0>(obj2) == 0) {
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
             //if it is plane 
@@ -113,10 +113,16 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
 
             double dist = (curr_v - pos).dot(dir);
             if (dist < 0.2) {
-                collisions.push_back(std::make_pair(curr_v - dir * dist, vi));
+                std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
+                std::get<0>(collision_info) = curr_v - dir * dist;
+                std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
+                std::get<2>(collision_info) = vi;
+                std::get<3>(collision_info) = sF.row(0)(1);
+                std::get<4>(collision_info) = still_obj_type_id;
+                collisions.push_back(collision_info);
             }
         }
-    } else if (still_obj_type_id == -1)
+    } else if (std::get<0>(obj2) == -1)
     {
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
@@ -129,7 +135,13 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
 
             double dist = (curr_v(1) - pos(1));
             if (dist <= 0.2) {
-                collisions.push_back(std::make_pair(curr_v - dir * abs(dist), vi));
+                std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
+                std::get<0>(collision_info) = curr_v - dir * dist;
+                std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
+                std::get<2>(collision_info) = vi;
+                std::get<3>(collision_info) = sF.row(0)(1);
+                std::get<4>(collision_info) = still_obj_type_id;
+                collisions.push_back(collision_info);
             }
         }
     } else
@@ -139,18 +151,20 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
         for (int vi = 0; vi < q.rows() / 3; vi++) {
             bool found_p2, found;
             found = false;
+            int p2_index;
             found_p2 = false;
             Eigen::Vector3d p2, n1, p3, n2;
             double faces_count = (double)VtF.at(vi).size();
             for (int fi_vi = 0; fi_vi < faces_count; fi_vi++)
             {
                 Eigen::Vector3d v0, v1, v2, n_of_vi;
-            	v0 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(0));
-                v1 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(1));
-                v2 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(2));
+            	v0 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(0) * 3);
+                v1 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(1) * 3);
+                v2 = q.segment<3>(F1.row(VtF.at(vi).at(fi_vi))(2) * 3);
                 n_of_vi = (v1 - v0).cross(v2 - v0);
                 n1 = n1 + 1.0 / faces_count * n_of_vi;
             }
+            n1 = n1.normalized();
         	// see if there are any intersections between the vertex p1 on obj1 and faces on obj2
             for (int fi = 0; fi < sF.rows(); fi++)
             {
@@ -169,22 +183,29 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
             	{
                     p2 = q.segment<3>(vi * 3) + t * (-n1);
                     Eigen::Vector3d v0, v1, v2;
-                    v0 = q2.segment<3>(sF.row(fi)(0));
-                    v1 = q2.segment<3>(sF.row(fi)(1));
-                    v2 = q2.segment<3>(sF.row(fi)(2));
+                    v0 = q2.segment<3>(sF.row(fi)(0) * 3);
+                    v1 = q2.segment<3>(sF.row(fi)(1) * 3);
+                    v2 = q2.segment<3>(sF.row(fi)(2) * 3);
                     n2 = (v1 - v0).cross(v2 - v0);
+                    n2 = n2.normalized();
                     if (n1.dot(n2) > 0)
                     {
                         break;
                     }
                     found_p2 = true;
+                    p2_index = sF.row(fi)(0);
             	} else if (found && found_p2)
             	{
             		p3 = q.segment<3>(vi * 3) + t * (n1);
             		if ((p2 - q.segment<3>(vi * 3)).norm() <= (p3 - q.segment<3>(vi * 3)).norm())
             		{
-                        collisions.push_back(std::make_pair(q.segment<3>(vi * 3) + n1 * 0.01, vi));
-                        
+                        std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
+                        std::get<0>(collision_info) = p2;
+                        std::get<1>(collision_info) = -n2;
+                        std::get<2>(collision_info) = vi;
+                        std::get<3>(collision_info) = p2_index;
+                        std::get<4>(collision_info) = still_obj_type_id;
+                        collisions.push_back(collision_info);
                         break;
             		}
             	}

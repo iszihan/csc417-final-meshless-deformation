@@ -161,17 +161,14 @@ Bounding_box::Bounding_box(Eigen::Vector3d min, Eigen::Vector3d max)
 }
 
 void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
-                         unsigned int moving_obj_type_id,
-                         unsigned int still_obj_type_id,
-                         scene_object obj1, scene_object obj2){        
-    //TODO: need to handle different object differently? 
-    //PLANE: check against the sides of the plane, just need plane normal and a plane vertex 
-    //OTHERS: check against every vertices and compute distance -- no inside/outside check here? not needed?
+                         unsigned int moving_obj_geometry_idx,
+                         unsigned int still_obj_geometry_idx,
+                         scene_object obj1, scene_object obj2){       
+
     Eigen::VectorXd q = std::get<8>(obj1);
     Eigen::VectorXd q2 = std::get<8>(obj2);
     Eigen::MatrixXd sV = std::get<1>(obj2);
     Eigen::MatrixXi sF = std::get<2>(obj2);
-	
     if (std::get<0>(obj2) == 0) {
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
@@ -193,7 +190,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                 std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
                 std::get<2>(collision_info) = vi;
                 std::get<3>(collision_info) = sF.row(0)(1);
-                std::get<4>(collision_info) = still_obj_type_id;
+                std::get<4>(collision_info) = still_obj_geometry_idx;
                 collisions.push_back(collision_info);
             }
         }
@@ -215,7 +212,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                 std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
                 std::get<2>(collision_info) = vi;
                 std::get<3>(collision_info) = sF.row(0)(1);
-                std::get<4>(collision_info) = still_obj_type_id;
+                std::get<4>(collision_info) = still_obj_geometry_idx;
                 collisions.push_back(collision_info);
             }
         }
@@ -279,7 +276,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                         std::get<1>(collision_info) = -n2;
                         std::get<2>(collision_info) = vi;
                         std::get<3>(collision_info) = p2_index;
-                        std::get<4>(collision_info) = still_obj_type_id;
+                        std::get<4>(collision_info) = still_obj_geometry_idx;
                         collisions.push_back(collision_info);
                         break;
             		}

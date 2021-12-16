@@ -18,8 +18,8 @@ double dt = 0.001; //time step
 bool simulating = true;
 bool simulation_callback() {
     while(simulating){
-	 	//simulate_clustering(geometry, dt, t);
-        simulate(geometry, dt, t, mtx);
+	 	simulate_clustering(geometry, dt, t);
+        //simulate(geometry, dt, t, mtx);
      	t += dt;
     }
     return false;
@@ -49,8 +49,8 @@ int main(int argc, char **argv) {
     std::cout<<"Start Meshless Deformation...\n";
 
     //setup
-    assignment_setup(argc, argv, geometry);
-    //clustering_setup(argc, argv, geometry);
+    //assignment_setup(argc, argv, geometry);
+    clustering_setup(argc, argv, geometry);
     
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback);

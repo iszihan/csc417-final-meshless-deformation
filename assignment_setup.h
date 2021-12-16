@@ -45,7 +45,7 @@ typedef std::tuple<int,                           //0 moving or still
 
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
-                             "../data/cube.obj"};
+                             "../data/sphere.obj"};
 
 //material parameters
 double mass = 1.0;
@@ -62,7 +62,6 @@ Eigen::VectorXd x0_tmp;
 Eigen::MatrixXd Q_tmp;
 int item_placement = -1;
 std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> spring_points_list;
-//std::vector<std::vector<std::pair<Eigen::Vector3d, unsigned int>>> collision_points_list;
 std::vector<std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>>> collision_points_list; // 0=point on the surface of collision target, 1=vertex normal, 2=vertex index
 
 
@@ -80,7 +79,7 @@ int item_type = 0;
 
 //selection spring
 double lspring = 0.1;
-double k_selected = 1e4;
+double k_selected = 1e7;
 double k_collision = 1e5;
 
 inline void add_object_VF(std::vector<scene_object> &geometry, Eigen::MatrixXd &V, Eigen::MatrixXi &F, 
@@ -427,34 +426,28 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
             scene_object moving_object = geometry.at(mi);
-            // only check if the object is not static
-            if (std::get<0>(moving_object) >= 1)
+            if (std::get<0>(moving_object) >= 1) //only check if it's static
             {
                 for (unsigned int si = 0; si < geometry.size(); ++si)
                 {
-                    // do not check collision against itself
-                    if (si != mi)
+                    if (si != mi) //do not check against itself
                     {
                         scene_object collision_target = geometry.at(si);
-                    	// only do collision compute if they overlapps
+                    	// only do collision compute if they overlaps
                         if (precomputation(moving_object, collision_target)) {
                             // only have collision detection with planes for now others can be implemented later
-                            //std::cout << "checking collision" << std::endl;
-                            collision_detection(collision_points_list.at(mi), mi, si,
-                                moving_object, collision_target);
+                            collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
                         }
                     }
                 }
             }
-
         }
-        Eigen::Vector3d mouse;
+
         Eigen::Vector6d dV_mouse;
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
         for (int object_id = 0; object_id < geometry.size(); object_id++)
         {
-            // only consider the movable objects to save compute
-            if (std::get<0>(geometry.at(object_id)) > 0)
+            if (std::get<0>(geometry.at(object_id)) > 0)  // only consider the movable objects to save compute
             {
                 for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                 {
@@ -462,15 +455,12 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                     Eigen::Vector3d p1 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
                     Eigen::Vector3d p2 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
                     spring_points_list.at(object_id).push_back(std::make_pair((q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
-                    //TODO: add a dragging handle visualization
-                    //Visualize::scale_x(1, 2.0);
                 }
             }
         }
 
         for (int i = 0; i < geometry.size(); i++)
         {
-            //add collision spring points between moving geometries
             scene_object current_object = geometry.at(i);
             if (std::get<0>(current_object) > 0)
             {
@@ -532,7 +522,6 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
             Eigen::Vector3d pos = Visualize::mouse_world();
             pos(1) = 3.0;
             pos(2) = 0.0;
-            //pos(1) = std::min(pos(1), 3.0);
             add_object(geometry, data_paths[item_placement], pos, false);
             item_placement = -1;
             mtx.unlock();
@@ -543,7 +532,6 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
 inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, double t)
 {
     //std::cout<<"simulating clustering"<<std::endl;
-    //Interaction spring
     if (!simulation_pause)
     {
         //collect dragging points
@@ -552,18 +540,16 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
         for (int i = 0; i < geometry.size(); i++)
         {
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
-            std::vector < std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> collision_points_tmp;
+            std::vector <std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> collision_points_tmp;
             spring_points_list.push_back(spring_points_tmp);
             collision_points_list.push_back(collision_points_tmp);
         }
 
-        Eigen::Vector3d mouse;
         Eigen::Vector6d dV_mouse;
         double k_selected_now = (Visualize::is_mouse_dragging() ? k_selected : 0.);
         for (int object_id = 0; object_id < geometry.size(); object_id++)
         {
-            // only consider the movable objects to save compute
-            if (std::get<0>(geometry.at(object_id)) > 0)
+            if (std::get<0>(geometry.at(object_id)) > 0) // only consider the movable objects to save compute
             {
                 for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                 {
@@ -581,27 +567,16 @@ inline void simulate_clustering(std::vector<scene_object> &geometry, double dt, 
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> spring_points_tmp;
             std::vector<std::pair<Eigen::Vector3d, unsigned int>> collision_points_tmp;
             scene_object moving_object = geometry.at(mi);
-            // only check if the object is not static
-            if (std::get<0>(moving_object) >= 1)
+            if (std::get<0>(moving_object) >= 1)  // only check if the object is not static
             {
                 for (unsigned int si = 0; si < geometry.size(); ++si)
                 {
                     // do not check collision against itself
                     if (si != mi)
                     {
-                        std::cout<<"checking"<<std::endl;
+                        //std::cout<<"checking"<<std::endl;
                         scene_object collision_target = geometry.at(si);
-                        collision_detection(collision_points_list.at(mi), 
-                                            std::get<0>(moving_object), 
-                                            std::get<0>(collision_target),
-                                            moving_object, collision_target);
-                    	// only do collision compute if they overlaps
-                        // if (precomputation(moving_object, collision_target)) {
-                        //     // only have collision detection with planes for now others can be implemented later
-                        //     std::cout << "checking collision" << std::endl;
-                        //     collision_detection(collision_points_list.at(mi), std::get<0>(moving_object), std::get<0>(collision_target),
-                        //         moving_object, collision_target);
-                        // }
+                        collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
                     }
                 }
             }
@@ -732,22 +707,17 @@ bool key_down_callback(igl::opengl::glfw::Viewer& viewer, unsigned char key, int
 
 inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &geometry)
 {
-
     Eigen::Vector3d origin;
     origin << 0.0, 5, 1;
-    //add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
-    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
+    add_object(geometry, "../data/cube.obj", origin, false);
     origin << 0.0, 0, 0.0;
-    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
+    add_object(geometry, "../data/cube.obj", origin, false);
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
-    Eigen::SparseMatrixd N;
     floor_normal << 0.0, 1.0, 0.0;
     floor_pos << 0.0, -4.0, 0.0;
     add_floor(floor_normal, floor_pos, geometry);
     Visualize::viewer().callback_key_down = key_down_callback;
-    std::cout << "finished set up" << std::endl;
-    std::cout << "there is a total of " << geometry.size() << " pieces of geometry. \n";
 }
 
 

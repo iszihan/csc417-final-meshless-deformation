@@ -24,7 +24,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                                     std::vector<std::vector<int>> clusters, 
                                     int method, FORCE &force, Eigen::VectorXd &tmp_force, Eigen::Vector3d & comt) {
 
-    //std::cout<<"inside integration..."<<std::endl;
+    std::cout<<"inside integration..."<<std::endl;
     //gather forces
     force(tmp_force,q,qdot);
     
@@ -34,7 +34,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     //keep fixed points unchanged
     q_tmp = P.transpose() * P * q_tmp + x0;
 
-    std::cout<<"Meshless integration with cluster size = "<<clusters.size()<<std::endl;
+    //std::cout<<"Meshless integration with cluster size = "<<clusters.size()<<std::endl;
     Eigen::VectorXd qdot_holder(qdot.rows());
     qdot_holder.setZero();
     for(int ic=0; ic<clusters.size(); ++ic){
@@ -135,8 +135,8 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             update_weight=1.f/(2.f*(clusters.size()-1.f));
         }
         update_weight = 1.f/clusters.size();
-        std::cout<<"cluster index:"<<ic<<std::endl;
-        std::cout<<"update weight:"<<update_weight<<std::endl;
+        //std::cout<<"cluster index:"<<ic<<std::endl;
+        //std::cout<<"update weight:"<<update_weight<<std::endl;
         double alpha = 1.0;
         Eigen::VectorXd qdoti_updates = alpha * ((gt_flatten - qi_tmp))/dt;     
         //add to the global qdot at cluster vertices
@@ -144,7 +144,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             qdot_holder.segment<3>(clusters.at(ic).at(iv)*3) += update_weight * (qdot_tmp.segment<3>(clusters.at(ic).at(iv)*3) + qdoti_updates.segment<3>(iv*3));
         }
     }
-    std::cout<<"qdot norm:"<<qdot_holder.norm()<<std::endl;
+    //std::cout<<"qdot norm:"<<qdot_holder.norm()<<std::endl;
     //update q with qdot
     q = q + dt * qdot_holder;
     q = P.transpose() * P * q + x0;

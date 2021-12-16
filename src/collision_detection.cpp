@@ -31,7 +31,6 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,
 						 scene_object obj1, scene_object obj2){        
-    //TODO: need to handle different object differently? 
     //PLANE: check against the sides of the plane, just need plane normal and a plane vertex 
     //OTHERS: check against every vertices and compute distance -- no inside/outside check here? not needed?
     Eigen::VectorXd q = std::get<8>(obj1);
@@ -40,6 +39,7 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
     Eigen::MatrixXi sF = std::get<2>(obj2);
 	
     if (still_obj_type_id == 0) {
+        std::cout<<"checking with floor"<<std::endl;
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
             //if it is plane 
@@ -55,6 +55,7 @@ void collision_detection(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &
 
             double dist = (curr_v - pos).dot(dir);
             if (dist < 0.2) {
+                std::cout<<"colliding with floor"<<std::endl;
                 collisions.push_back(std::make_pair(curr_v - dir * dist, vi));
             }
         }

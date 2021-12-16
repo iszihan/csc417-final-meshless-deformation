@@ -12,7 +12,7 @@ Eigen::VectorXd q;
 Eigen::VectorXd qdot;
 //simulation time and time step
 double t = 0; //simulation time 
-double dt = 0.0001; //time step
+double dt = 0.001; //time step
 
 //simulation loop
 bool simulating = true;

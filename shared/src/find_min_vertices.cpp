@@ -8,6 +8,7 @@ void find_min_vertices(std::vector<unsigned int> &indices, Eigen::Ref<const Eige
     for(unsigned int vi=0; vi<V.rows(); ++vi) {
         min_vertex = (V(vi,1) < min_vertex ? V(vi,1) : min_vertex);
     }
+    std::cout<<min_vertex<<std::endl;
 
     for(unsigned int vi=0; vi<V.rows(); ++vi) {
 

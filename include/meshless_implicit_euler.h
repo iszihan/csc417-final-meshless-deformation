@@ -17,16 +17,14 @@
 //  q - set q to the updated generalized coordinate using linearly implicit time integration
 //  qdot - set qdot to the updated generalized velocity using linearly implicit time integration
 
-
-//TODO:
-// - clustering 
-// - linear and quadratic 
 template<typename FORCE> 
 inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, double mass,
                                     Eigen::SparseMatrixd &P, Eigen::VectorXd &x0,
                                     std::vector<Eigen::Vector3d> centers_of_mass, std::vector<Eigen::MatrixXd> &Qs, 
                                     std::vector<std::vector<int>> clusters, 
-                                    int method, FORCE &force, Eigen::VectorXd &tmp_force) {
+                                    int method, FORCE &force, Eigen::VectorXd &tmp_force, Eigen::Vector3d & comt) {
+
+    //std::cout<<"inside integration..."<<std::endl;
     //gather forces
     force(tmp_force,q,qdot);
     
@@ -73,21 +71,23 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::MatrixXd transformedP;
         if(method == 0){
             //rigid
-            std::cout<<"using method 0: rigid"<<std::endl;
+            //std::cout<<"using method 0: rigid"<<std::endl;
             Eigen::Matrix3d T;
             T = R;
             transformedP = (T * _Q.transpose()).transpose();
         }else if(method == 1){
             //linear
-            std::cout<<"using method 1: linear"<<std::endl;
-            double beta = 0.99;
+            //std::cout<<"using method 1: linear"<<std::endl;
+            double beta = 0.5;
             Eigen::Matrix3d T;
             A = A / std::cbrt(A.determinant());
             T = beta * A + (1-beta) * R;
             transformedP = (T * _Q.transpose()).transpose();
         }else if(method == 2){
             //quadratic
-            std::cout<<"using method 2: quadratic"<<std::endl;
+            //std::cout<<"using method 2: quadratic"<<std::endl;
+            
+            //TODO: move this to pre-computation?
             Eigen::MatrixXd _Qdelta;
             _Qdelta.setZero(_Q.rows(),9);
             for(int r=0; r<_Q.rows(); ++r){

@@ -1,6 +1,24 @@
 #include <collision_detection.h>
 #include <iostream>
 
+size_t Spatial_hash_fn::operator()(const Eigen::Vector3d inputval) const
+{
+    int v1, v2, v3, h;
+    v1 = (int)floor(inputval(0) / Spatial_hash_fn::cellsize);
+    v2 = (int)floor(inputval(1) / Spatial_hash_fn::cellsize);
+    v3 = (int)floor(inputval(2) / Spatial_hash_fn::cellsize);
+    h = ((v1 * p1) & (v2 * p2) & (v3 * p3)) % hashtable_size;
+    return h;
+}
+void Spatial_hash_fn::get_mapping(const Eigen::Vector3d inputval, Eigen::Vector3d rounded_values) const
+{
+    double v1, v2, v3, h;
+    rounded_values(0) = floor(inputval(0) / Spatial_hash_fn::cellsize) * Spatial_hash_fn::cellsize;
+    rounded_values(1) = floor(inputval(1) / Spatial_hash_fn::cellsize) * Spatial_hash_fn::cellsize;
+    rounded_values(2) = floor(inputval(2) / Spatial_hash_fn::cellsize) * Spatial_hash_fn::cellsize;
+}
+
+
 bool point_triangle_intersection(Eigen::Vector3d point, Eigen::VectorXd vertex_list, 
                                  Eigen::RowVector3i face, Eigen::Vector3d & collision_pt)
 {
@@ -84,11 +102,68 @@ bool ray_triangle_intersect(
 	return true;
     ////////////////////////////////////////////////////////////////////////////
 }
+bool Bounding_box::ray_box_intersection(Eigen::Vector3d origin, Eigen::Vector3d ray_dir)
+{
+    double txmin, tymin, tzmin, txmax, tymax, tzmax;
+    Eigen::Vector3d dir = ray_dir.normalized();
+    if (dir(0) > 0) {
+        txmax = (max_corner(0, 0) - origin(0)) / dir(0);
+        txmin = (min_corner(0, 0) - origin(0)) / dir(0);
+    }
+    else {
+        txmin = (max_corner(0, 0) - origin(0)) / dir(0);
+        txmax = (min_corner(0, 0) - origin(0)) / dir(0);
+    }
+    if (dir(1) > 0) {
+        tymax = (max_corner(0, 1) - origin(1)) / dir(1);
+        tymin = (min_corner(0, 1) - origin(1)) / dir(1);
+    }
+    else {
+        tymin = (max_corner(0, 1) - origin(1)) / dir(1);
+        tymax = (min_corner(0, 1) - origin(1)) / dir(1);
+    }
+    if (dir(2) > 0) {
+        tzmax = (max_corner(0, 2) - origin(2)) / dir(2);
+        tzmin = (min_corner(0, 2) - origin(2)) / dir(2);
+    }
+    else {
+        tzmin = (max_corner(0, 2) - origin(2)) / dir(2);
+        tzmax = (min_corner(0, 2) - origin(2)) / dir(2);
+    }
+    if (std::max(std::max(txmin, tymin), tzmin) < std::min(std::min(txmax, tymax), tzmax)) {
+        return true;
+    }
+    else if (std::max(std::max(txmin, tymin), tzmin) < 0 && std::min(std::min(txmax, tymax), tzmax) > 0) {
+        return true;
+    }
+    return false;
+}
+bool Bounding_box::add_face(int face_id)
+{
+    face_list.push_back(face_id);
+    return true;
+}
+bool Bounding_box::get_face_list(std::vector<int>& rtv_face_list)
+{
+	if (face_list.size() == 0)
+	{
+        return false;
+	} else
+	{
+        rtv_face_list = face_list;
+        return true;
+	}
+}
+Bounding_box::Bounding_box(Eigen::Vector3d min, Eigen::Vector3d max)
+{
+    min_corner = min;
+    max_corner = max;
+}
 
 void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,
-						 scene_object obj1, scene_object obj2){        
+                         scene_object obj1, scene_object obj2){        
     //TODO: need to handle different object differently? 
     //PLANE: check against the sides of the plane, just need plane normal and a plane vertex 
     //OTHERS: check against every vertices and compute distance -- no inside/outside check here? not needed?
@@ -234,6 +309,7 @@ void compute_vertex_face_list(Eigen::MatrixXd V, Eigen::MatrixXi F, std::vector<
         V2F.push_back(current_vertex);
 	}
 }
+
 bool precomputation(scene_object obj1, scene_object obj2)
 {
     Eigen::VectorXd q1 = std::get<8>(obj1);
@@ -264,4 +340,29 @@ bool precomputation(scene_object obj1, scene_object obj2)
         double dist = abs((com1 - pos).dot(dir));
     	return dist - rad1 <= 0.1;
     }
+}
+
+void construct_spatial_hash_table(scene_object & obj)
+{
+    std::unordered_map <Eigen::Vector3d, std::vector<int>, Spatial_hash_fn> ht;
+    std::vector<int> occupied_hash_keys;
+    Spatial_hash_fn hf;
+    occupied_hash_keys.clear();
+    ht.clear();
+    Eigen::MatrixXi F = std::get<2>(obj);
+    Eigen::VectorXd q = std::get<8>(obj);
+    Eigen::Vector3d v0, v1, v2, max_cor, min_cor;
+    for (int i = 0; i < F.rows(); i++)
+    {
+        v0 = q.segment<3>(F.row(i)(0) * 3);
+        v1 = q.segment<3>(F.row(i)(1) * 3);
+        v2 = q.segment<3>(F.row(i)(2) * 3);
+        max_cor(0) = std::max(std::max(v0(0), v1(0)), v2(0));
+        max_cor(1) = std::max(std::max(v0(1), v1(1)), v2(1));
+        max_cor(2) = std::max(std::max(v0(2), v1(2)), v2(2));
+        min_cor(0) = std::min(std::min(v0(0), v1(0)), v2(0));
+        min_cor(1) = std::min(std::min(v0(1), v1(1)), v2(1));
+        min_cor(2) = std::min(std::min(v0(2), v1(2)), v2(2));
+    }
+    return;
 }

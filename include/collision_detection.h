@@ -1,6 +1,7 @@
 #include <Eigen/Dense>
 #include <EigenTypes.h>
 #include <vector>
+#include <unordered_map>
 #include <tuple>
 //Input:
 //  R - rotation matrix for rigid body
@@ -16,6 +17,33 @@
 //  is for the object towards which the normal points. The floor has an id of -1.
 //typedef std::tuple<int, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::MatrixXd, Eigen::MatrixXi, Eigen::SparseMatrixd,
 //    Eigen::SparseMatrixd, Eigen::Vector3d, Eigen::VectorXd, Eigen::VectorXd, Eigen::SparseMatrixd, Eigen::VectorXd, double, Eigen::Vector3d> scene_object;
+
+
+class Spatial_hash_fn
+{
+	int p1 = 73856093;
+	int p2 = 19349663;
+	int p3 = 83492791;
+	int hashtable_size = 1000;
+	double cellsize = 0.05;
+
+public:
+	size_t operator()(const Eigen::Vector3d inputval) const;
+	void get_mapping(const Eigen::Vector3d inputval, Eigen::Vector3d rounded_values) const;
+};
+
+class Bounding_box
+{
+	std::vector<int> face_list;
+	Eigen::Vector3d min_corner;
+	Eigen::Vector3d max_corner;
+public:
+	Bounding_box(Eigen::Vector3d min, Eigen::Vector3d max);
+	bool ray_box_intersection(Eigen::Vector3d origin, Eigen::Vector3d ray_dir);
+	bool add_face(int face_id);
+	bool get_face_list(std::vector<int> & rtv_face_list);
+
+};
 
 typedef std::tuple<int,                           //0 moving or still
 	Eigen::MatrixXd,               //1 V
@@ -34,7 +62,9 @@ typedef std::tuple<int,                           //0 moving or still
 	std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
 	double,                        //15 distance to com
 	Eigen::Vector3d,                //16 com that moves with time
-	std::vector<std::vector<int>>   //17  vertex face list
+	std::vector<std::vector<int>>,   //17  vertex face list
+	std::unordered_map <Eigen::Vector3d, Bounding_box, Spatial_hash_fn>, // 18 spacial hash table
+	std::vector<int>				// 19 occupied list
 > scene_object;
 
 void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
@@ -42,5 +72,10 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                          unsigned int still_obj_type_id,
                          scene_object obj1, scene_object obj2);
 void compute_vertex_face_list(Eigen::MatrixXd V, Eigen::MatrixXi F, std::vector<std::vector<int>>& V2F);
+
 bool precomputation(scene_object obj1, scene_object obj2);
+
+void construct_spatial_hash_table(scene_object obj);
+
+
         

@@ -38,7 +38,9 @@ typedef std::tuple<int,                           //0 moving or still
     std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
     double,                        //15 distance to com
     Eigen::Vector3d,                //16 com that moves with time
-    std::vector<std::vector<int>>   //17  vertex face list
+    std::vector<std::vector<int>>,   //17  vertex face list
+    std::unordered_map <Eigen::Vector3d, Bounding_box, Spatial_hash_fn>, // 18 spacial hash table
+    std::vector<int>				// 19 occupied list
 > scene_object;
 
 std::string data_paths[3] = {"../data/cube.obj",
@@ -666,10 +668,10 @@ inline void assignment_setup(int argc, char **argv, std::vector<scene_object> &g
     Eigen::Vector3d origin;
     origin << 0.0, 5, 1;
     //add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
-    add_object(geometry, "../data/cube.obj", origin, false);
+    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
 
     origin << 0.0, 0, 0.0;
-    add_object(geometry, "../data/cube.obj", origin, false);
+    add_object(geometry, "../data/coarse_bunny2.obj", origin, false);
     Eigen::Vector3d floor_normal;
     Eigen::Vector3d floor_pos;
     Eigen::SparseMatrixd N;

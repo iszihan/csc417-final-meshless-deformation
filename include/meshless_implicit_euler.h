@@ -28,13 +28,15 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     
     //gather forces
     force(tmp_force,q,qdot);
-    //std::cout<<tmp_force<<std::endl;    
+    std::cout<<tmp_force.norm()<<std::endl;    
+
     
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
     Eigen::VectorXd q_tmp = q + dt * qdot_tmp;
     //keep fixed points unchanged
     q_tmp = P.transpose() * P * q_tmp + x0;
+    
 
     //std::cout<<"Meshless integration with cluster size = "<<clusters.size()<<std::endl;
     Eigen::VectorXd qdot_holder(qdot.rows());
@@ -56,7 +58,6 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         Eigen::Vector3d center_of_masst;
         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(qi_tmp.data(),3,qi_tmp.rows()/3);
         center_of_masst = Vt.transpose().colwise().mean();
-        
         //get p and q: vertex position relative to current and original CoM 
         Eigen::MatrixXd _Q = Qs.at(ic);
         Eigen::MatrixXd _P = Vt.transpose().rowwise() - center_of_masst.transpose();
@@ -67,6 +68,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         //polar decomposition to get rotation
         Eigen::Matrix3d R;
         Eigen::Matrix3d S;
+        std::cout<<"before poalr dec"<<std::endl;
         igl::polar_dec(Apq, R, S);
 
         //get p: vertex position relative to current CoM 
@@ -80,7 +82,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         }else if(method == 1){
             //linear
             //std::cout<<"using method 1: linear"<<std::endl;
-            double beta = 0.5;
+            double beta = 0.7;
             Eigen::Matrix3d T;
             A = A / std::cbrt(A.determinant());
             T = beta * A + (1-beta) * R;
@@ -122,7 +124,6 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             transformedP = (T * _Qdelta.transpose()).transpose();
         }
         Eigen::MatrixXd gt = transformedP.rowwise() + center_of_masst.transpose();
-        
         //flatten gt
         Eigen::VectorXd gt_flatten;
         gt_flatten.resize(gt.rows()*gt.cols());
@@ -130,21 +131,44 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         gt_flatten = Eigen::Map<Eigen::VectorXd>(gtt.data(), gtt.rows()*gtt.cols());
         
         //update
-        float update_weight;
-        if(ic==0){
-            update_weight=1.f/2.f;
-        }else{
-            update_weight=1.f/(2.f*(clusters.size()-1.f));
+        float update_weight = 1.0;
+        if(clusters.size() > 1){
+            if(ic==0){
+                update_weight=1.f/2.f;
+            }else{
+                update_weight=1.f/(2.f*(clusters.size()-1.f));
+            }
         }
-        //update_weight = 1.f/clusters.size();
-        //std::cout<<"cluster index:"<<ic<<std::endl;
-        //std::cout<<"update weight:"<<update_weight<<std::endl;
+       
         double alpha = 1.0;
         Eigen::VectorXd qdoti_updates = alpha * ((gt_flatten - qi_tmp))/dt;     
+        
         //add to the global qdot at cluster vertices
         for(int iv=0;iv<clusters.at(ic).size();++iv){
             qdot_holder.segment<3>(clusters.at(ic).at(iv)*3) += update_weight * (qdot_tmp.segment<3>(clusters.at(ic).at(iv)*3) + qdoti_updates.segment<3>(iv*3));
+            //qdot.segment<3>(clusters.at(ic).at(iv)*3) = update_weight * (qdot_tmp.segment<3>(clusters.at(ic).at(iv)*3) + qdoti_updates.segment<3>(iv*3));
         }
+        
+        // if(tmp_force.norm() > 60){
+        //     std::cout<<"debug"<<std::endl;
+        //     std::cout<<"update weight:"<<update_weight<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(tmp_force.data(),3,tmp_force.rows()/3).transpose()<<std::endl;
+        //     std::cout<<"old:"<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(q.data(),3,q.rows()/3).transpose()<<std::endl;
+        //     std::cout<<"tmp:"<<std::endl;
+        //     std::cout<<Vt.transpose()<<std::endl;
+        //     std::cout<<"goals:"<<std::endl;
+        //     std::cout<<gt<<std::endl;
+        //     std::cout<<"qdot tmp"<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(qdot_tmp.data(),3,qdot_tmp.rows()/3).transpose()<<std::endl;
+        //     std::cout<<"qdot udpate"<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(qdoti_updates.data(),3,qdoti_updates.rows()/3).transpose()<<std::endl;
+        //     std::cout<<"qdot"<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(qdot.data(),3,qdot.rows()/3).transpose()<<std::endl;
+        //     std::cout<<"qdot holder:"<<std::endl;
+        //     std::cout<<Eigen::Map<Eigen::MatrixXd>(qdot_holder.data(),3,qdot_holder.rows()/3).transpose()<<std::endl;
+
+        // }
     }
     
     //update q with qdot

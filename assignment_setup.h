@@ -22,27 +22,27 @@
 #include <collision_detection.h>
 
 //data structures for geometry
-typedef std::tuple<int,                           //0 moving or still
-    Eigen::MatrixXd,               //1 V
-    Eigen::MatrixXi,               //2 F
-    Eigen::MatrixXd,               //3 V_skin
-    Eigen::MatrixXi,               //4 F_skin
-    Eigen::SparseMatrixd,          //5 N skinning matrix
-    Eigen::SparseMatrixd,          //6 M -- this is not actually used anywhere?
-    std::vector<Eigen::Vector3d>,  //7 center of mass for clusters
-    Eigen::VectorXd,               //8 q
-    Eigen::VectorXd,               //9 qdot
-    Eigen::SparseMatrixd,          //10 P
-    Eigen::VectorXd,               //11 x0
-    Eigen::VectorXd,               //12 gravity
-    std::vector<std::vector<int>>, //13 clusters of pair of vertex indices and positions
-    std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
-    double,                        //15 distance to com
-    Eigen::Vector3d,                //16 com that moves with time
-    std::vector<std::vector<int>>,   //17  vertex face list
-    std::unordered_map <Eigen::Vector3d, Bounding_box, Spatial_hash_fn>, // 18 spacial hash table
-    std::vector<int>				// 19 occupied list
-> scene_object;
+// typedef std::tuple<int,                           //0 moving or still
+//     Eigen::MatrixXd,               //1 V
+//     Eigen::MatrixXi,               //2 F
+//     Eigen::MatrixXd,               //3 V_skin
+//     Eigen::MatrixXi,               //4 F_skin
+//     Eigen::SparseMatrixd,          //5 N skinning matrix
+//     Eigen::SparseMatrixd,          //6 M -- this is not actually used anywhere?
+//     std::vector<Eigen::Vector3d>,  //7 center of mass for clusters
+//     Eigen::VectorXd,               //8 q
+//     Eigen::VectorXd,               //9 qdot
+//     Eigen::SparseMatrixd,          //10 P
+//     Eigen::VectorXd,               //11 x0
+//     Eigen::VectorXd,               //12 gravity
+//     std::vector<std::vector<int>>, //13 clusters of pair of vertex indices and positions
+//     std::vector<Eigen::MatrixXd>,  //14 Q = V-center_of_mass for clusters
+//     double,                        //15 distance to com
+//     Eigen::Vector3d,                //16 com that moves with time
+//     std::vector<std::vector<int>>,   //17  vertex face list
+//     std::unordered_map <Eigen::Vector3d, Bounding_box, Spatial_hash_fn>, // 18 spacial hash table
+//     std::vector<int>				// 19 occupied list
+// > scene_object;
 
 std::string data_paths[3] = {"../data/cube.obj",
                              "../data/coarse_bunny2.obj",
@@ -111,13 +111,9 @@ inline void add_object(std::vector<scene_object>& geometry, std::string file_pat
     Eigen::Vector3d com = V.colwise().mean();
     V = V.rowwise() - com.transpose();
     //scale
-    std::cout<<V<<std::endl;
-    std::cout<<scale.transpose().array();
     V.array().rowwise() *= scale.transpose().array();
-    std::cout<<V<<std::endl;
     //translate to target position
     V = V.rowwise() + position.transpose();
-    //std::cout<<V<<std::endl;
     init_state(q, qdot, V);
 
     //skinning
@@ -211,6 +207,8 @@ inline void add_object(std::vector<scene_object>& geometry, std::string file_pat
                     Eigen::MatrixXd curr_Q = V_cluster.rowwise() - curr_com.transpose();
                     centers_of_mass.push_back(curr_com);
                     Qs.push_back(curr_Q);
+
+                    std::cout<<"curr cluster size:"<<curr_cluster.size()<<std::endl;
                 }
             }
         }
@@ -331,6 +329,9 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                             //     collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
                             // }
                             collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
+                            // if(collision_points_list.at(mi).size()>0){
+                            //     std::cout<<"collision size:"<<collision_points_list.at(mi).size()<<std::endl;
+                            // }
 
                         }
                     }
@@ -348,8 +349,10 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                     for (unsigned int pickedi = 0; pickedi < Visualize::picked_vertices().size(); pickedi++)
                     {
                         Eigen::VectorXd q = std::get<8>(geometry.at(object_id));
-                        Eigen::Vector3d p1 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6);
-                        Eigen::Vector3d p2 = (q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]);
+                        Eigen::Vector3d p1 = q.segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() * 20.f + Eigen::Vector3d::Constant(1e-6);
+                        Eigen::Vector3d p2 = q.segment<3>(3 * Visualize::picked_vertices()[pickedi]);
+                        //std::cout<<"p1:"<<p1<<std::endl;
+                        //std::cout<<"p2:"<<p2<<std::endl;
                         spring_points_list.at(object_id).push_back(std::make_pair((q + std::get<11>(geometry.at(object_id))).segment<3>(3 * Visualize::picked_vertices()[pickedi]) + Visualize::mouse_drag_world() + Eigen::Vector3d::Constant(1e-6), 3 * Visualize::picked_vertices()[pickedi]));
                     }
                 }
@@ -377,12 +380,15 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                         for (unsigned int pickedi = 0; pickedi < spring_points.size(); pickedi++)
                         {
                            dV_spring_particle_particle_dq(dV_mouse, spring_points[pickedi].first, q2.segment<3>(spring_points[pickedi].second), 0.0, k_selected_now);
-                           f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) -= dV_mouse.segment<3>(3);
+                           f.segment<3>(3 * Visualize::picked_vertices()[pickedi]) += dV_mouse.segment<3>(3);
                         }
                     }
 
                     //collision force
                     if(add_collision){
+                        // if(collision_points_list.at(i).size()>0){
+                        //     std::cout<<"collision size here:"<<collision_points_list.at(i).size()<<std::endl;
+                        // }                         
                         for (unsigned int ci = 0; ci < collision_points_list.at(i).size(); ci++)
                         {
                             //std::cout<<"adding collision "<<ci<<std::endl;
@@ -403,18 +409,23 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                             repulsive_force = force_magnitude * (-target_dir); // this will be in the direction where obj1 will be bounced to
                             f.segment<3>(3 * std::get<2>(collision_points_list.at(i).at(ci))) += repulsive_force;
                             // std::cout<<"the other object type: "<<std::get<9>(geometry.at(std::get<4>(collision_points_list.at(i).at(ci))))<<std::endl;
+                            std::cout<<std::get<2>(collision_points_list.at(i).at(ci))<<std::endl;
                             // std::cout<<"ptdot:"<<ptdot<<std::endl;
                             // std::cout<<"pt2dot:"<<pt2dot<<std::endl;
                             // std::cout<<"pt projected:"<<pt_projected<<std::endl;
-                            // std::cout<<"pt:"<<pt<<std::endl;
+                            std::cout<<"pt:"<<pt<<std::endl;
                             // std::cout<<"force mag:"<<force_magnitude<<std::endl;
                             // std::cout<<"k_collision"<<k_collision<<std::endl;
                             // std::cout<<"d * k_collision"<<d * k_collision<<std::endl;
                             // std::cout<<"d"<<d<<std::endl;
-                            //std::cout<<repulsive_force<<std::endl;
+                            std::cout<<repulsive_force<<std::endl;
                         }
+                        if(collision_points_list.at(i).size()>0){
+                            std::cout<<"collision size here:"<<collision_points_list.at(i).size()<<std::endl;
+                            std::cout<<f.norm()<<std::endl;
+                        }
+                        std::cout<<"force:"<<f.norm()<<std::endl;
                     }
-                    //std::cout<<"force:"<<f<<std::endl;
                 };
 
                 Eigen::Vector3d comt;
@@ -510,9 +521,9 @@ inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Ei
     //  - k_collision = 1e4
     
     //things that need to be tweaked
-    k_selected = 1e5;
+    k_selected = 1e4;
     k_collision = 1e5;
-    t = 0.001;
+    t = 0.0001;
     if(argc>1){
         which_setup = std::stoi(std::string(argv[1]));
     }
@@ -524,9 +535,9 @@ inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Ei
         force_setup<<1,1,1;
     }else if(which_setup == 1){
         //clustering setup 
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 3, Eigen::Vector3i(1,7,1), 0.001, true);
-        add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
-        force_setup<<0,1,0;
+        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 1, Eigen::Vector3i(1,1,1), 0.001, false);
+        add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-4.0,0.0), geometry);
+        force_setup<<1,1,1;
     }
     Visualize::viewer().callback_key_down = key_down_callback;
 }

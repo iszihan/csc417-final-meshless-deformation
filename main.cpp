@@ -51,8 +51,8 @@ int main(int argc, char **argv) {
     
     //setup
     Eigen::Vector3i force_setup;
-    setup(argc, argv, geometry,force_setup, t);
-    
+    setup(argc, argv, geometry,force_setup, dt);
+    std::cout<<"t:"<<dt<<std::endl;
     //run simulation in seperate thread to avoid slowing down the UI
     std::thread simulation_thread(simulation_callback, force_setup);
     simulation_thread.detach();

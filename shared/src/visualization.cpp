@@ -389,7 +389,7 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
     }
 
     bool Visualize::mouse_down(igl::opengl::glfw::Viewer &viewer, int x, int y) {
-        
+        std::cout<<"mouse down"<<std::endl;
         g_mouse_win = Eigen::Vector3d(g_viewer.current_mouse_x,viewer.core().viewport(3) - g_viewer.current_mouse_y,0.);
         igl::unproject(
                 g_mouse_win,
@@ -397,15 +397,15 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
                 g_viewer.core().proj,
                 g_viewer.core().viewport,
                 g_mouse_world);
+        std::cout<<"g mouse win"<<g_mouse_win<<std::endl;
 
         //if you click on the mesh select the vertex, otherwise do nothing
         if(pick_nearest_vertices(g_picked_vertices, g_mouse_win, 
                                  g_viewer.core().view, g_viewer.core().proj, g_viewer.core().viewport,
                                  g_geometry[0].first, g_geometry[0].second, g_picking_tol)) {
-
+            std::cout<<"picked a vertex"<<std::endl;
             g_selected_obj = 0;
-            g_mouse_dragging = true; 
-            
+            g_mouse_dragging = true;  
         }
         
         return false;
@@ -436,10 +436,8 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
                 g_mouse_win,
                 g_viewer.core().view,
                 g_viewer.core().proj,
-                 g_viewer.core().viewport,
+                g_viewer.core().viewport,
                 g_mouse_drag_world);
-        
-    
         g_mouse_drag_world -= g_mouse_world;
 
         //std::cout<<"Test: "<<g_mouse_drag_world.transpose()<<"\n";
@@ -447,7 +445,7 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
                 g_mouse_win,
                 g_viewer.core().view,
                 g_viewer.core().proj,
-                 g_viewer.core().viewport,
+                g_viewer.core().viewport,
                 g_mouse_world);
         
 

@@ -24,12 +24,13 @@ class Spatial_hash_fn
 	int p1 = 73856093;
 	int p2 = 19349663;
 	int p3 = 83492791;
-	int hashtable_size = 1000;
-	double cellsize = 0.05;
+	int hashtable_size = 500;
+public:
+	double cellsize = 0.45;
 
 public:
 	size_t operator()(const Eigen::Vector3d inputval) const;
-	void get_mapping(const Eigen::Vector3d inputval, Eigen::Vector3d rounded_values) const;
+	void get_mapping(const Eigen::Vector3d inputval, Eigen::Vector3d & rounded_values) const;
 };
 
 class Bounding_box
@@ -39,6 +40,7 @@ class Bounding_box
 	Eigen::Vector3d max_corner;
 public:
 	Bounding_box(Eigen::Vector3d min, Eigen::Vector3d max);
+	Bounding_box();
 	bool ray_box_intersection(Eigen::Vector3d origin, Eigen::Vector3d ray_dir);
 	bool add_face(int face_id);
 	bool get_face_list(std::vector<int> & rtv_face_list);
@@ -63,7 +65,7 @@ typedef std::tuple<int,                           //0 moving or still
 	double,                        //15 distance to com
 	Eigen::Vector3d,                //16 com that moves with time
 	std::vector<std::vector<int>>,   //17  vertex face list
-	std::unordered_map <Eigen::Vector3d, Bounding_box, Spatial_hash_fn>, // 18 spacial hash table
+	std::unordered_map <int, Bounding_box>, // 18 spacial hash table
 	std::vector<int>				// 19 occupied list
 > scene_object;
 
@@ -75,11 +77,17 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,
                          scene_object obj1, scene_object obj2);
+
+void collision_detection_with_optimization(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>>& collisions,
+	unsigned int moving_obj_type_id,
+	unsigned int still_obj_type_id,
+	scene_object obj1, scene_object obj2);
+
 void compute_vertex_face_list(Eigen::MatrixXd V, Eigen::MatrixXi F, std::vector<std::vector<int>>& V2F);
 
 bool precomputation(scene_object obj1, scene_object obj2);
 
-void construct_spatial_hash_table(scene_object obj);
+void construct_spatial_hash_table(scene_object & obj);
 
 
         

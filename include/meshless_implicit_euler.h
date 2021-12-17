@@ -24,9 +24,11 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
                                     std::vector<std::vector<int>> clusters, 
                                     int method, FORCE &force, Eigen::VectorXd &tmp_force, Eigen::Vector3d & comt) {
 
-    std::cout<<"inside integration..."<<std::endl;
+    //std::cout<<"inside integration..."<<std::endl;
+    
     //gather forces
     force(tmp_force,q,qdot);
+    //std::cout<<tmp_force<<std::endl;    
     
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
@@ -114,7 +116,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             Eigen::MatrixXd _R;
             _R.setZero(3,9);
             _R.block(0,0,3,3) = R;
-            double beta = 0.99;
+            double beta = 0.7;
             Eigen::MatrixXd T;
             T = beta * _A + (1-beta) * _R; //3x9
             transformedP = (T * _Qdelta.transpose()).transpose();
@@ -134,7 +136,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         }else{
             update_weight=1.f/(2.f*(clusters.size()-1.f));
         }
-        update_weight = 1.f/clusters.size();
+        //update_weight = 1.f/clusters.size();
         //std::cout<<"cluster index:"<<ic<<std::endl;
         //std::cout<<"update weight:"<<update_weight<<std::endl;
         double alpha = 1.0;
@@ -144,8 +146,9 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
             qdot_holder.segment<3>(clusters.at(ic).at(iv)*3) += update_weight * (qdot_tmp.segment<3>(clusters.at(ic).at(iv)*3) + qdoti_updates.segment<3>(iv*3));
         }
     }
-    //std::cout<<"qdot norm:"<<qdot_holder.norm()<<std::endl;
+    
     //update q with qdot
-    q = q + dt * qdot_holder;
+    qdot = qdot_holder;
+    q = q + dt * qdot;
     q = P.transpose() * P * q + x0;
 }

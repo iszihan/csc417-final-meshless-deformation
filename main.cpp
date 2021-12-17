@@ -12,14 +12,14 @@ Eigen::VectorXd q;
 Eigen::VectorXd qdot;
 //simulation time and time step
 double t = 0; //simulation time 
-double dt = 0.001; //time step
+double dt = 0.003; //time step
 
 //simulation loop
 bool simulating = true;
-bool simulation_callback() {
+bool simulation_callback(Eigen::Vector3i force_setup) {
+    
     while(simulating){
-	 	simulate_clustering(geometry, dt, t);
-        //simulate(geometry, dt, t, mtx);
+	 	simulate(geometry, dt, t, mtx, force_setup);
      	t += dt;
     }
     return false;
@@ -46,14 +46,15 @@ void h(Ret &&a, B b, C c, void (*func)(Ret, B, C)) {
 }
 
 int main(int argc, char **argv) {
+    
     std::cout<<"Start Meshless Deformation...\n";
-
+    
     //setup
-    //assignment_setup(argc, argv, geometry);
-    clustering_setup(argc, argv, geometry);
+    Eigen::Vector3i force_setup;
+    setup(argc, argv, geometry,force_setup, t);
     
     //run simulation in seperate thread to avoid slowing down the UI
-    std::thread simulation_thread(simulation_callback);
+    std::thread simulation_thread(simulation_callback, force_setup);
     simulation_thread.detach();
 
     //setup libigl viewer and activate 

@@ -67,6 +67,10 @@ typedef std::tuple<int,                           //0 moving or still
 	std::vector<int>				// 19 occupied list
 > scene_object;
 
+void collision_detection_old(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
+                             unsigned int moving_obj_type_id,
+                             unsigned int still_obj_type_id,
+						     scene_object obj1, scene_object obj2);
 void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
                          unsigned int moving_obj_type_id,
                          unsigned int still_obj_type_id,

@@ -10,6 +10,7 @@ size_t Spatial_hash_fn::operator()(const Eigen::Vector3d inputval) const
     h = ((v1 * p1) & (v2 * p2) & (v3 * p3)) % hashtable_size;
     return h;
 }
+
 void Spatial_hash_fn::get_mapping(const Eigen::Vector3d inputval, Eigen::Vector3d rounded_values) const
 {
     double v1, v2, v3, h;
@@ -47,12 +48,9 @@ bool point_triangle_intersection(Eigen::Vector3d point, Eigen::VectorXd vertex_l
 bool ray_triangle_intersect(
     Eigen::Vector3d ray_origin, Eigen::Vector3d ray_direction, double& t, Eigen::VectorXd vertex_list, Eigen::RowVector3i face)
 {
-    double min_t = 0.0001;
-	
+    double min_t = 0.0001;	
     double local_t = 0;
 
-    
-	
     Eigen::Vector3d s = vertex_list.segment<3>(face(0) * 3) - ray_origin;
     Eigen::Vector3d normal;
     Eigen::Matrix3d C;
@@ -102,6 +100,7 @@ bool ray_triangle_intersect(
 	return true;
     ////////////////////////////////////////////////////////////////////////////
 }
+
 bool Bounding_box::ray_box_intersection(Eigen::Vector3d origin, Eigen::Vector3d ray_dir)
 {
     double txmin, tymin, tzmin, txmax, tymax, tzmax;
@@ -160,16 +159,19 @@ Bounding_box::Bounding_box(Eigen::Vector3d min, Eigen::Vector3d max)
     max_corner = max;
 }
 
-void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
-                         unsigned int moving_obj_geometry_idx,
-                         unsigned int still_obj_geometry_idx,
-                         scene_object obj1, scene_object obj2){       
-
+void collision_detection_old(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,
+                             unsigned int moving_obj_type_id,
+                             unsigned int still_obj_type_id,
+						     scene_object obj1, scene_object obj2){        
+    //TODO: need to handle different object differently? 
+    //PLANE: check against the sides of the plane, just need plane normal and a plane vertex 
+    //OTHERS: check against every vertices and compute distance -- no inside/outside check here? not needed?
     Eigen::VectorXd q = std::get<8>(obj1);
     Eigen::VectorXd q2 = std::get<8>(obj2);
     Eigen::MatrixXd sV = std::get<1>(obj2);
     Eigen::MatrixXi sF = std::get<2>(obj2);
-    if (std::get<0>(obj2) == 0) {
+	
+    if (still_obj_type_id == 0) {
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
             //if it is plane 
@@ -185,6 +187,72 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
 
             double dist = (curr_v - pos).dot(dir);
             if (dist < 0.2) {
+                collisions.push_back(std::make_pair(curr_v - dir * dist, vi));
+            }
+        }
+    } else if (still_obj_type_id == -1)
+    {
+        for (int vi = 0; vi < q.rows() / 3; ++vi) {
+            Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
+            //if it is plane 
+            Eigen::Vector3d pos = sV.row(0);
+            Eigen::Vector3d e10 = sV.row(sF.row(0)(1)) - sV.row(sF.row(0)(0));
+            Eigen::Vector3d e20 = sV.row(sF.row(0)(2)) - sV.row(sF.row(0)(0));
+            Eigen::Vector3d dir = e10.cross(e20);
+            dir = dir.normalized();
+            // std::cout<<"plane point"<<std::endl;
+            // std::cout<<pos<<std::endl;
+            // std::cout<<"plane normal"<<std::endl;
+            // std::cout<<dir<<std::endl;
+
+            double dist = (curr_v(1) - pos(1));
+            if (dist <= 0.2) {
+                collisions.push_back(std::make_pair(curr_v - dir * abs(dist), vi));
+            }
+        }
+    } else
+    {
+        for (int vi = 0; vi < q.rows() / 3; vi++) {
+            bool found = false;
+            for (int fi = 0; fi < sF.rows(); fi++)
+            {
+                Eigen::Vector3d intersection_pt;
+                found = point_triangle_intersection(q.segment<3>(vi * 3), q2, sF, intersection_pt);
+            	if (found)
+            	{
+                    std::cout << "\n" << intersection_pt << "\n";
+                    collisions.push_back(std::make_pair(intersection_pt, vi));
+            		break;
+            	}
+            }
+        }
+    }
+}
+
+
+void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> &collisions,
+                         unsigned int moving_obj_geometry_idx,
+                         unsigned int still_obj_geometry_idx,
+                         scene_object obj1, scene_object obj2){       
+
+    Eigen::VectorXd q = std::get<8>(obj1);
+    Eigen::VectorXd qdot = std::get<9>(obj1);
+    Eigen::VectorXd q2 = std::get<8>(obj2);
+    Eigen::MatrixXd sV = std::get<1>(obj2);
+    //std::cout<<std::get<0>(obj2)<<std::endl;
+    Eigen::MatrixXi sF = std::get<2>(obj2);
+    if (std::get<0>(obj2) == 0) {
+        for (int vi = 0; vi < q.rows() / 3; ++vi) {
+            Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
+            //if it is plane 
+            Eigen::Vector3d pos = sV.row(0);
+            Eigen::Vector3d e10 = sV.row(sF.row(0)(1)) - sV.row(sF.row(0)(0));
+            Eigen::Vector3d e20 = sV.row(sF.row(0)(2)) - sV.row(sF.row(0)(0));
+            Eigen::Vector3d dir = e10.cross(e20);
+            dir = dir.normalized();
+            double dist = (curr_v - pos).dot(dir);
+            if (dist < 0.2) {
+                //gather collision info to apply collision force
                 std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
                 std::get<0>(collision_info) = curr_v - dir * dist;
                 std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
@@ -192,6 +260,19 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                 std::get<3>(collision_info) = sF.row(0)(1);
                 std::get<4>(collision_info) = still_obj_geometry_idx;
                 collisions.push_back(collision_info);
+                // if(dist < 0.0){
+                //     //move vertex so that there is no penetration
+                //     //std::cout<<"bf:"<<curr_v<<std::endl;
+                //     curr_v = curr_v - dist * dir;
+                //     //std::cout<<"af:"<<curr_v<<std::endl;
+                //     q.segment<3>(3*vi) = curr_v;
+                //     std::get<8>(obj1) = q;
+                //     //zero out current vertex velocity
+                //     Eigen::Vector3d zero_vel;
+                //     zero_vel<<0.0,0.0,0.0;
+                //     qdot.segment<3>(3*vi) = zero_vel;
+                //     std::get<9>(obj1) = qdot; 
+                // }
             }
         }
     } else if (std::get<0>(obj2) == -1)
@@ -285,6 +366,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
         }
     }
 }
+
 void compute_vertex_face_list(Eigen::MatrixXd V, Eigen::MatrixXi F, std::vector<std::vector<int>> &V2F)
 {
     V2F.clear();
@@ -313,8 +395,6 @@ bool precomputation(scene_object obj1, scene_object obj2)
     Eigen::VectorXd q2 = std::get<8>(obj2);
     Eigen::Vector3d com1, com2;
     double rad1, rad2;
-	
-	
     if (std::get<0>(obj2) >= 1){
         com1 = std::get<16>(obj1);
         rad1 = std::get<15>(obj1);
@@ -333,7 +413,6 @@ bool precomputation(scene_object obj1, scene_object obj2)
         Eigen::Vector3d e20 = sV.row(sF.row(0)(2)).transpose() - sV.row(sF.row(0)(0)).transpose();
         Eigen::Vector3d dir = e10.cross(e20);
         dir = dir.normalized();
-        
         double dist = abs((com1 - pos).dot(dir));
     	return dist - rad1 <= 0.1;
     }
@@ -341,7 +420,7 @@ bool precomputation(scene_object obj1, scene_object obj2)
 
 void construct_spatial_hash_table(scene_object & obj)
 {
-    std::unordered_map <Eigen::Vector3d, std::vector<int>, Spatial_hash_fn> ht;
+    std::unordered_map<Eigen::Vector3d, std::vector<int>, Spatial_hash_fn> ht;
     std::vector<int> occupied_hash_keys;
     Spatial_hash_fn hf;
     occupied_hash_keys.clear();

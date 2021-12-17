@@ -111,10 +111,13 @@ inline void add_object(std::vector<scene_object>& geometry, std::string file_pat
     Eigen::Vector3d com = V.colwise().mean();
     V = V.rowwise() - com.transpose();
     //scale
-    //V.array().rowwise() *= scale.transpose().array();
+    std::cout<<V<<std::endl;
+    std::cout<<scale.transpose().array();
+    V.array().rowwise() *= scale.transpose().array();
+    std::cout<<V<<std::endl;
     //translate to target position
     V = V.rowwise() + position.transpose();
-    std::cout<<V<<std::endl;
+    //std::cout<<V<<std::endl;
     init_state(q, qdot, V);
 
     //skinning
@@ -267,6 +270,9 @@ inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     }
 
     Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N, Eigen::RowVector3d(64, 165, 130) / 255.);
+
+    Eigen::VectorXd q(V_floor.rows()*3);
+    q.setZero();
     scene_object one_geometry;
     Eigen::SparseMatrixd M;
     std::get<0>(one_geometry) = 0;
@@ -277,8 +283,8 @@ inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     std::get<5>(one_geometry) = N;
     std::get<6>(one_geometry) = M;
     std::get<7>(one_geometry).push_back(Eigen::Vector3d::Zero());
-    std::get<8>(one_geometry) = Eigen::Vector3d::Zero();
-    std::get<9>(one_geometry) = Eigen::Vector3d::Zero();
+    std::get<8>(one_geometry) = q;
+    std::get<9>(one_geometry) = q;
     geometry.push_back(one_geometry);
 }
 
@@ -379,19 +385,36 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                     if(add_collision){
                         for (unsigned int ci = 0; ci < collision_points_list.at(i).size(); ci++)
                         {
+                            //std::cout<<"adding collision "<<ci<<std::endl;
                             Eigen::Vector3d repulsive_force, pt, pt_projected, target_dir, ptdot, pt2dot;
+                            //current colliding vertex projected onto the colliding object
                             pt_projected = std::get<0>(collision_points_list.at(i).at(ci));
+                            //current colliding vertex
                             pt = std::get<8>(current_object).segment<3>(std::get<2>(collision_points_list.at(i).at(ci)) * 3);
+                            //current colliding vertex velocity
                             ptdot = std::get<9>(current_object).segment<3>(std::get<2>(collision_points_list.at(i).at(ci)) * 3);
+                            //the other colliding vertex id
                             int obj2_vertex_id_velocity = std::get<3>(collision_points_list.at(i).at(ci));
+                            //the other colliding vertex's velocity
                             pt2dot = std::get<9>(geometry.at(std::get<4>(collision_points_list.at(i).at(ci)))).segment<3>(obj2_vertex_id_velocity * 3);
                             target_dir = std::get<1>(collision_points_list.at(i).at(ci)).normalized(); // this is made negative, so that it becomes the direction the repulsive force should go to
                             double d = abs((pt - pt_projected).dot(-target_dir));
                             double force_magnitude = d * k_collision - 5000 * (ptdot.dot(-target_dir) - pt2dot.dot(-target_dir));
                             repulsive_force = force_magnitude * (-target_dir); // this will be in the direction where obj1 will be bounced to
                             f.segment<3>(3 * std::get<2>(collision_points_list.at(i).at(ci))) += repulsive_force;
+                            // std::cout<<"the other object type: "<<std::get<9>(geometry.at(std::get<4>(collision_points_list.at(i).at(ci))))<<std::endl;
+                            // std::cout<<"ptdot:"<<ptdot<<std::endl;
+                            // std::cout<<"pt2dot:"<<pt2dot<<std::endl;
+                            // std::cout<<"pt projected:"<<pt_projected<<std::endl;
+                            // std::cout<<"pt:"<<pt<<std::endl;
+                            // std::cout<<"force mag:"<<force_magnitude<<std::endl;
+                            // std::cout<<"k_collision"<<k_collision<<std::endl;
+                            // std::cout<<"d * k_collision"<<d * k_collision<<std::endl;
+                            // std::cout<<"d"<<d<<std::endl;
+                            //std::cout<<repulsive_force<<std::endl;
                         }
                     }
+                    //std::cout<<"force:"<<f<<std::endl;
                 };
 
                 Eigen::Vector3d comt;
@@ -495,13 +518,13 @@ inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Ei
     }
     if(which_setup == 0){
         //collision setup
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,5.0,1.0), Eigen::Vector3d(1.0), 0, Eigen::Vector3i(1), 0.001, false);
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0), 0, Eigen::Vector3i(1), 0.001, false);
+        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,5.0,1.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
+        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
         add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
         force_setup<<1,1,1;
     }else if(which_setup == 1){
         //clustering setup 
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 3, Eigen::Vector3i(1,1,1), 0.001, true);
+        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 3, Eigen::Vector3i(1,7,1), 0.001, true);
         add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
         force_setup<<0,1,0;
     }

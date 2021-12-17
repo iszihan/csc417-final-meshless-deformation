@@ -262,19 +262,6 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
                 std::get<3>(collision_info) = sF.row(0)(1);
                 std::get<4>(collision_info) = still_obj_geometry_idx;
                 collisions.push_back(collision_info);
-                // if(dist < 0.0){
-                //     //move vertex so that there is no penetration
-                //     //std::cout<<"bf:"<<curr_v<<std::endl;
-                //     curr_v = curr_v - dist * dir;
-                //     //std::cout<<"af:"<<curr_v<<std::endl;
-                //     q.segment<3>(3*vi) = curr_v;
-                //     std::get<8>(obj1) = q;
-                //     //zero out current vertex velocity
-                //     Eigen::Vector3d zero_vel;
-                //     zero_vel<<0.0,0.0,0.0;
-                //     qdot.segment<3>(3*vi) = zero_vel;
-                //     std::get<9>(obj1) = qdot; 
-                // }
             }
         }
     } else if (std::get<0>(obj2) == -1)

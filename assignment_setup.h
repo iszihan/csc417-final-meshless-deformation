@@ -100,7 +100,7 @@ inline void add_object(std::vector<scene_object>& geometry, std::string file_pat
     Eigen::MatrixXi SF;
 
     //load in file
-    igl::readOBJ("../data/cube.obj", V, F);
+    igl::readOBJ(file_path, V, F);
     for (int i = 0; i < subdiv; ++i)
     {
         igl::upsample(V, F, SV, SF);
@@ -286,12 +286,13 @@ inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     geometry.push_back(one_geometry);
 }
 
-inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx, Eigen::Vector3i force_setup)
+inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx, Eigen::Vector4i force_setup)
 {
     //std::cout<<"inside simulate"<<std::endl;
     bool add_gravity = (force_setup(0) == 1);
     bool add_dragging = (force_setup(1) == 1);
     bool add_collision = (force_setup(2) == 1);
+    bool add_collision_optimization = (force_setup(3) == 1);
 
     //Interaction spring
     if (!simulation_pause)
@@ -305,6 +306,9 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
             std::vector < std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int>> collision_points_tmp;
             spring_points_list.push_back(spring_points_tmp);
             collision_points_list.push_back(collision_points_tmp);
+            if (add_collision_optimization) {
+                construct_spatial_hash_table(geometry.at(i));
+            }
         }
 
         if(add_collision){
@@ -324,15 +328,17 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                             //std::cout<<si<<std::endl;
                             scene_object collision_target = geometry.at(si);
                             // only do collision compute if they overlaps
-                            // if (precomputation(moving_object, collision_target)) {
-                            //     // only have collision detection with planes for now others can be implemented later                        
-                            //     collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
-                            // }
-                            collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
-                            // if(collision_points_list.at(mi).size()>0){
-                            //     std::cout<<"collision size:"<<collision_points_list.at(mi).size()<<std::endl;
-                            // }
-
+                            if (precomputation(moving_object, collision_target)) {
+                                // only have collision detection with planes for now others can be implemented later
+                                const clock_t begin_time = clock();
+                                if (add_collision_optimization) {
+                                    collision_detection_with_optimization(collision_points_list.at(mi), mi, si, moving_object, collision_target);
+								} else
+								{
+                                    collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
+								}
+                                //std::cout << float(clock() - begin_time) / CLOCKS_PER_SEC << std::endl;
+                             } 
                         }
                     }
                 }
@@ -406,25 +412,15 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                             target_dir = std::get<1>(collision_points_list.at(i).at(ci)).normalized(); // this is made negative, so that it becomes the direction the repulsive force should go to
                             double d = abs((pt - pt_projected).dot(-target_dir));
                             double force_magnitude = d * k_collision - 5000 * (ptdot.dot(-target_dir) - pt2dot.dot(-target_dir));
+                            //force_magnitude = d * k_collision;
                             repulsive_force = force_magnitude * (-target_dir); // this will be in the direction where obj1 will be bounced to
                             f.segment<3>(3 * std::get<2>(collision_points_list.at(i).at(ci))) += repulsive_force;
-                            // std::cout<<"the other object type: "<<std::get<9>(geometry.at(std::get<4>(collision_points_list.at(i).at(ci))))<<std::endl;
-                            std::cout<<std::get<2>(collision_points_list.at(i).at(ci))<<std::endl;
-                            // std::cout<<"ptdot:"<<ptdot<<std::endl;
-                            // std::cout<<"pt2dot:"<<pt2dot<<std::endl;
-                            // std::cout<<"pt projected:"<<pt_projected<<std::endl;
-                            std::cout<<"pt:"<<pt<<std::endl;
-                            // std::cout<<"force mag:"<<force_magnitude<<std::endl;
-                            // std::cout<<"k_collision"<<k_collision<<std::endl;
-                            // std::cout<<"d * k_collision"<<d * k_collision<<std::endl;
-                            // std::cout<<"d"<<d<<std::endl;
-                            std::cout<<repulsive_force<<std::endl;
                         }
                         if(collision_points_list.at(i).size()>0){
-                            std::cout<<"collision size here:"<<collision_points_list.at(i).size()<<std::endl;
-                            std::cout<<f.norm()<<std::endl;
+                            //std::cout<<"collision size here:"<<collision_points_list.at(i).size()<<std::endl;
+                            //std::cout<<f.norm()<<std::endl;
                         }
-                        std::cout<<"force:"<<f.norm()<<std::endl;
+                        //std::cout<<"force:"<<f.norm()<<std::endl;
                     }
                 };
 
@@ -448,8 +444,8 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
             Eigen::Vector3d pos = Visualize::mouse_world();
             pos(1) = 3.0;
             pos(2) = 0.0;
-            add_object(geometry, data_paths[item_placement], pos, Eigen::Vector3d(1.0), 0, Eigen::Vector3i(1), false, 0.001);
-            item_placement = -1;
+            add_object(geometry, data_paths[item_placement], pos, Eigen::Vector3d(1.0, 1.0, 1.0), 0, Eigen::Vector3i(1, 1, 1), 0.001, false);
+        	item_placement = -1;
             mtx.unlock();
         }
     }
@@ -470,17 +466,17 @@ inline void draw(std::vector<scene_object> geometry, double t)
 
 bool key_down_callback(igl::opengl::glfw::Viewer& viewer, unsigned char key, int modifiers)
 {
-    if (key == 'L')
+    if (key == '4')
     {
         std::cout << "toggle deformation to linear \n";
         method = 1;
     }
-    if (key == 'Q')
+    if (key == '5')
     {
         std::cout << "toggle deformation to quadratic \n";
         method = 2;
     }
-    if (key == 'R')
+    if (key == '6')
     {
         std::cout << "toggle deformation to rigid only \n";
         method = 0;
@@ -513,7 +509,7 @@ bool key_down_callback(igl::opengl::glfw::Viewer& viewer, unsigned char key, int
     return false;
 }
 
-inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Eigen::Vector3i& force_setup, double& t)
+inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Eigen::Vector4i& force_setup, double& t)
 {    
     // certain scenario that works 
     // 1. dropping sphere quadratically onto the floor with nice deformation 
@@ -523,21 +519,21 @@ inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Ei
     //things that need to be tweaked
     k_selected = 1e4;
     k_collision = 1e5;
-    t = 0.0001;
+    t = 0.01;
     if(argc>1){
         which_setup = std::stoi(std::string(argv[1]));
     }
     if(which_setup == 0){
         //collision setup
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,5.0,1.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
-        add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
+        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0,8.0,1.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
+        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
         add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
-        force_setup<<1,1,1;
+        force_setup<<1,0,1,1;
     }else if(which_setup == 1){
         //clustering setup 
         add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 1, Eigen::Vector3i(1,1,1), 0.001, false);
         add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-4.0,0.0), geometry);
-        force_setup<<1,1,1;
+        force_setup<<1,1,1,1;
     }
     Visualize::viewer().callback_key_down = key_down_callback;
 }

@@ -28,7 +28,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
     
     //gather forces
     force(tmp_force,q,qdot);
-    std::cout<<tmp_force.norm()<<std::endl;    
+    //std::cout<<tmp_force.norm()<<std::endl;    
 
     
     //update all vertices without the goal position fitting
@@ -68,7 +68,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         //polar decomposition to get rotation
         Eigen::Matrix3d R;
         Eigen::Matrix3d S;
-        std::cout<<"before poalr dec"<<std::endl;
+        //std::cout<<"before poalr dec"<<std::endl;
         igl::polar_dec(Apq, R, S);
 
         //get p: vertex position relative to current CoM 

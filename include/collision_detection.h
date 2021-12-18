@@ -66,7 +66,9 @@ typedef std::tuple<int,                           //0 moving or still
 	Eigen::Vector3d,                //16 com that moves with time
 	std::vector<std::vector<int>>,   //17  vertex face list
 	std::unordered_map <int, Bounding_box>, // 18 spacial hash table
-	std::vector<int>				// 19 occupied list
+	std::vector<int>,				// 19 occupied list
+	Eigen::VectorXi,				// 20 per-vertex cluster counts
+	std::vector<Eigen::Matrix3d>	// 21 per-cluster Sp for plasticity
 > scene_object;
 
 void collision_detection_old(std::vector<std::pair<Eigen::Vector3d, unsigned int>> &collisions,

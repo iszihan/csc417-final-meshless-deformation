@@ -60,7 +60,7 @@ namespace Visualize {
     const Eigen::Vector3d & mouse_drag_world();
 
 
-    const std::vector<unsigned int> & picked_vertices(); 
+    const std::vector<std::pair<unsigned int,unsigned int>> & picked_vertices(); 
 
     bool is_mouse_dragging();
 

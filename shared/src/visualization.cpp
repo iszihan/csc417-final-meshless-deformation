@@ -16,7 +16,7 @@ namespace Visualize {
     std::vector<unsigned int> g_id; //id into libigl for these meshes 
 
     //picking variables 
-    std::vector<unsigned int > g_picked_vertices;  
+    std::vector<std::pair<unsigned int,unsigned int>> g_picked_vertices;  
     unsigned int g_selected_obj; 
     
     //pointers to q and qdot (I want to change this to functions that compute the current vertex positions)
@@ -380,7 +380,7 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
          g_viewer.data_list[g_id[id]].dirty |= igl::opengl::MeshGL::DIRTY_POSITION;
     }
 
-    const std::vector<unsigned int> & Visualize::picked_vertices() {
+    const std::vector<std::pair<unsigned int, unsigned int>> & Visualize::picked_vertices() {
         return g_picked_vertices;
     }
     
@@ -397,15 +397,17 @@ bool Visualize::plot_phase_space(const char *label, ImVec2 q_bounds, ImVec2 q_do
                 g_viewer.core().proj,
                 g_viewer.core().viewport,
                 g_mouse_world);
-        std::cout<<"g mouse win"<<g_mouse_win<<std::endl;
 
         //if you click on the mesh select the vertex, otherwise do nothing
-        if(pick_nearest_vertices(g_picked_vertices, g_mouse_win, 
+        std::cout<<g_geometry.size()<<std::endl;
+        for(int gi=0; gi<g_geometry.size()-1; gi++){
+            if(pick_nearest_vertices(g_picked_vertices, g_mouse_win, 
                                  g_viewer.core().view, g_viewer.core().proj, g_viewer.core().viewport,
-                                 g_geometry[0].first, g_geometry[0].second, g_picking_tol)) {
-            std::cout<<"picked a vertex"<<std::endl;
-            g_selected_obj = 0;
-            g_mouse_dragging = true;  
+                                 g_geometry[gi].first, g_geometry[gi].second, g_picking_tol, gi)) {
+                std::cout<<"picked a vertex with geometry "<<gi<<std::endl;
+                g_selected_obj = gi;
+                g_mouse_dragging = true;  
+            }
         }
         
         return false;

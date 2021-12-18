@@ -257,10 +257,10 @@ inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     Eigen::Vector3d n0;
     n0 << 0, 1, 0;
     floor_normal.normalize();
-    float angle = std::acos(n0.dot(floor_normal)) + 0.15;
+    float angle = std::acos(n0.dot(floor_normal));
     Eigen::Vector3d axis = n0.cross(floor_normal);
     Eigen::Matrix3d floor_R = Eigen::AngleAxisd(angle, axis).matrix();
-    //translate plane
+    //translate plane       
     for (unsigned int iv = 0; iv < V_floor.rows(); ++iv)
     {
         Eigen::Vector3d rotated = floor_R * V_floor.row(iv).transpose();
@@ -285,7 +285,54 @@ inline void add_floor(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, s
     std::get<9>(one_geometry) = q;
     geometry.push_back(one_geometry);
 }
+inline void add_floor_alt(Eigen::Vector3d floor_normal, Eigen::Vector3d floor_pos, std::vector<scene_object>& geometry)
+{
+    Eigen::MatrixXd V_floor;
+    Eigen::MatrixXi F_floor;
+    Eigen::SparseMatrixd N;
+    igl::readOBJ("../data/plane.obj", V_floor, F_floor);
+    //make it bigger
+    V_floor *= 10.0;
+    //skinning
+    N.resize(V_floor.rows(), V_floor.rows());
+    N.setIdentity();
+    //rotate plane
+    Eigen::Vector3d n0;
+    n0 << 0, 1, 0;
+    floor_normal.normalize();
+    float angle = std::acos(n0.dot(floor_normal));
+    Eigen::Vector3d axis = n0.cross(floor_normal);
+    Eigen::Matrix3d floor_R = Eigen::AngleAxisd(angle, axis).matrix();
+    //translate plane       
+    for (unsigned int iv = 0; iv < V_floor.rows(); ++iv)
+    {
+        Eigen::Vector3d rotated = floor_R * V_floor.row(iv).transpose();
+        V_floor.row(iv) = (rotated + floor_pos + Eigen::Vector3d(0., -0.01, 0.)).transpose();
+    }
 
+    Visualize::add_object_to_scene(V_floor, F_floor, V_floor, F_floor, N, Eigen::RowVector3d(64, 165, 130) / 255.);
+
+    Eigen::VectorXd q(V_floor.rows() * 3);
+    Eigen::VectorXd qdot(V_floor.rows() * 3);
+    q.setZero();
+    init_state(q, qdot, V_floor);
+    scene_object one_geometry;
+    Eigen::SparseMatrixd M;
+    Eigen::Vector3d curr_com = V_floor.colwise().mean();
+	
+    std::get<0>(one_geometry) = -1;
+    std::get<1>(one_geometry) = V_floor;
+    std::get<2>(one_geometry) = F_floor;
+    std::get<3>(one_geometry) = V_floor;
+    std::get<4>(one_geometry) = F_floor;
+    std::get<5>(one_geometry) = N;
+    std::get<6>(one_geometry) = M;
+    std::get<7>(one_geometry).push_back(Eigen::Vector3d::Zero());
+    std::get<8>(one_geometry) = q;
+    std::get<9>(one_geometry) = q;
+    std::get<16>(one_geometry) = curr_com;
+    geometry.push_back(one_geometry);
+}
 inline void simulate(std::vector<scene_object> &geometry, double dt, double t, std::mutex &mtx, Eigen::Vector4i force_setup)
 {
     //std::cout<<"inside simulate"<<std::endl;
@@ -326,19 +373,30 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                         if (si != mi) //do not check against itself
                         {
                             //std::cout<<si<<std::endl;
-                            scene_object collision_target = geometry.at(si);
+                            scene_object collision_target = geometry.at(si); 
                             // only do collision compute if they overlaps
-                            if (precomputation(moving_object, collision_target)) {
-                                // only have collision detection with planes for now others can be implemented later
-                                const clock_t begin_time = clock();
+                            if (std::get<0>(collision_target) >= 1) {
+                                if (precomputation(moving_object, collision_target)) {
+                                    // only have collision detection with planes for now others can be implemented later
+                                    if (add_collision_optimization) {
+                                        collision_detection_with_optimization(collision_points_list.at(mi), mi, si, moving_object, collision_target);
+                                    }
+                                    else
+                                    {
+                                        collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
+                                    }
+                                    //std::cout << float(clock() - begin_time) / CLOCKS_PER_SEC << std::endl;
+                                }
+                            } else
+                            {
                                 if (add_collision_optimization) {
                                     collision_detection_with_optimization(collision_points_list.at(mi), mi, si, moving_object, collision_target);
-								} else
-								{
+                                }
+                                else
+                                {
                                     collision_detection(collision_points_list.at(mi), mi, si, moving_object, collision_target);
-								}
-                                //std::cout << float(clock() - begin_time) / CLOCKS_PER_SEC << std::endl;
-                             } 
+                                }
+                            }
                         }
                     }
                 }
@@ -412,7 +470,7 @@ inline void simulate(std::vector<scene_object> &geometry, double dt, double t, s
                             target_dir = std::get<1>(collision_points_list.at(i).at(ci)).normalized(); // this is made negative, so that it becomes the direction the repulsive force should go to
                             double d = abs((pt - pt_projected).dot(-target_dir));
                             double force_magnitude = d * k_collision - 5000 * (ptdot.dot(-target_dir) - pt2dot.dot(-target_dir));
-                            //force_magnitude = d * k_collision;
+                            force_magnitude = d * k_collision;
                             repulsive_force = force_magnitude * (-target_dir); // this will be in the direction where obj1 will be bounced to
                             f.segment<3>(3 * std::get<2>(collision_points_list.at(i).at(ci))) += repulsive_force;
                         }
@@ -519,18 +577,29 @@ inline void setup(int argc, char **argv, std::vector<scene_object> &geometry, Ei
     //things that need to be tweaked
     k_selected = 1e4;
     k_collision = 1e5;
+    //t = 0.0005;
     t = 0.01;
+
     if(argc>1){
         which_setup = std::stoi(std::string(argv[1]));
     }
     if(which_setup == 0){
         //collision setup
-        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0,8.0,1.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
-        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
-        add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
+        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0,8.0,-1.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);
+        add_object(geometry, data_paths[1], Eigen::Vector3d(0.0, 3.0, -1.0), Eigen::Vector3d(1.0, 1.0, 1.0), 0, Eigen::Vector3i(1, 1, 1), 0.001, false);
+        /*add_object(geometry, data_paths[0], Eigen::Vector3d(1.0, 4.0, 1.0), Eigen::Vector3d(1.0, 1.0, 1.0), 0, Eigen::Vector3i(1, 1, 1), 0.001, false);
+        add_object(geometry, data_paths[0], Eigen::Vector3d(1.0, 2.0, 1.0), Eigen::Vector3d(1.0, 1.0, 1.0), 0, Eigen::Vector3i(1, 1, 1), 0.001, false);
+        add_object(geometry, data_paths[0], Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,1.0,1.0), 0, Eigen::Vector3i(1,1,1), 0.001, false);*/
+        add_floor_alt(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-1.0,0.0), geometry);
+        add_floor_alt(Eigen::Vector3d(1.0, 0.0, 0.0), Eigen::Vector3d(-17.0, 8, 0.0), geometry);
+        add_floor_alt(Eigen::Vector3d(-1.0, 0.0, 0.0), Eigen::Vector3d(17.0, 8, 0.0), geometry);
+        add_floor_alt(Eigen::Vector3d(0, 0.0, -1.0), Eigen::Vector3d(0.0, 8, 17.0), geometry);
+        add_floor_alt(Eigen::Vector3d(0, 0.0, 1.0), Eigen::Vector3d(0.0, 8, -17.0), geometry);
+
         force_setup<<1,0,1,1;
     }else if(which_setup == 1){
-        //clustering setup 
+        //clustering setup
+    	
         add_object(geometry, "../data/cube.obj", Eigen::Vector3d(0.0,2.0,0.0), Eigen::Vector3d(1.0,2.0,1.0), 1, Eigen::Vector3i(1,1,1), 0.001, false);
         add_floor(Eigen::Vector3d(0.0,1.0,0.0), Eigen::Vector3d(0.0,-4.0,0.0), geometry);
         force_setup<<1,1,1,1;

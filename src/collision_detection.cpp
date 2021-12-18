@@ -243,6 +243,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
     Eigen::MatrixXd sV = std::get<1>(obj2);
     //std::cout<<std::get<0>(obj2)<<std::endl;
     Eigen::MatrixXi sF = std::get<2>(obj2);
+
     if (std::get<0>(obj2) == 0) {
         for (int vi = 0; vi < q.rows() / 3; ++vi) {
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
@@ -253,6 +254,7 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
             Eigen::Vector3d dir = e10.cross(e20);
             dir = dir.normalized();
             double dist = (curr_v - pos).dot(dir);
+            //double dist = abs((curr_v - pos).dot(dir));
             if (dist < 0.2) {
                 //gather collision info to apply collision force
                 std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
@@ -270,13 +272,32 @@ void collision_detection(std::vector<std::tuple<Eigen::Vector3d, Eigen::Vector3d
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
             //if it is plane 
             Eigen::Vector3d pos = sV.row(0);
-            Eigen::Vector3d e10 = sV.row(sF.row(0)(1)) - sV.row(sF.row(0)(0));
-            Eigen::Vector3d e20 = sV.row(sF.row(0)(2)) - sV.row(sF.row(0)(0));
-            Eigen::Vector3d dir = e10.cross(e20);
-            dir = dir.normalized();
 
-            double dist = (curr_v(1) - pos(1));
+            Eigen::Vector3d dir;
+            if (std::get<16>(obj2)(0) > 5)
+            {
+                dir = Eigen::Vector3d(-1, 0, 0);
+            }
+            else if (std::get<16>(obj2)(0) < -5)
+            {
+                dir = Eigen::Vector3d(1, 0, 0);
+            }
+            else if (std::get<16>(obj2)(2) < -5)
+            {
+                dir = Eigen::Vector3d(0, 0, 1);
+            }
+            else if (std::get<16>(obj2)(2) > 5)
+            {
+                dir = Eigen::Vector3d(0, 0, -1);
+            }
+            else
+            {
+                dir = Eigen::Vector3d(0, 1, 0);
+            }
+            dir = dir.normalized();
+            double dist = (curr_v - pos).dot(dir);
             if (dist <= 0.2) {
+
                 std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
                 std::get<0>(collision_info) = curr_v - dir * dist;
                 std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
@@ -374,7 +395,6 @@ void collision_detection_with_optimization(std::vector<std::tuple<Eigen::Vector3
             Eigen::Vector3d e20 = sV.row(sF.row(0)(2)) - sV.row(sF.row(0)(0));
             Eigen::Vector3d dir = e10.cross(e20);
             dir = dir.normalized();
-
             double dist = (curr_v - pos).dot(dir);
             if (dist < 0.2) {
                 std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
@@ -393,13 +413,32 @@ void collision_detection_with_optimization(std::vector<std::tuple<Eigen::Vector3
             Eigen::Vector3d curr_v = q.segment<3>(3 * vi);
             //if it is plane 
             Eigen::Vector3d pos = sV.row(0);
-            Eigen::Vector3d e10 = sV.row(sF.row(0)(1)) - sV.row(sF.row(0)(0));
-            Eigen::Vector3d e20 = sV.row(sF.row(0)(2)) - sV.row(sF.row(0)(0));
-            Eigen::Vector3d dir = e10.cross(e20);
-            dir = dir.normalized();
 
-            double dist = (curr_v(1) - pos(1));
+            Eigen::Vector3d dir;
+            if (std::get<16>(obj2)(0) > 5)
+            {
+                dir = Eigen::Vector3d(-1, 0, 0);
+            }
+            else if (std::get<16>(obj2)(0) < -5)
+            {
+                dir = Eigen::Vector3d(1, 0, 0);
+            }
+            else if (std::get<16>(obj2)(2) < -5)
+            {
+                dir = Eigen::Vector3d(0, 0, 1);
+            }
+            else if (std::get<16>(obj2)(2) > 5)
+            {
+                dir = Eigen::Vector3d(0, 0, -1);
+            }
+            else
+            {
+                dir = Eigen::Vector3d(0, 1, 0);
+            }
+            dir = dir.normalized();
+            double dist = (curr_v - pos).dot(dir);
             if (dist <= 0.2) {
+
                 std::tuple<Eigen::Vector3d, Eigen::Vector3d, unsigned int, unsigned int, unsigned int> collision_info;
                 std::get<0>(collision_info) = curr_v - dir * dist;
                 std::get<1>(collision_info) = -dir; // negative sign is added to make it the vertex normal
@@ -539,7 +578,7 @@ bool precomputation(scene_object obj1, scene_object obj2)
         com2 = std::get<16>(obj2);
         rad2 = std::get<15>(obj2);
         return ((com2 - com1).norm() + 0.1 <= std::min(rad1, rad2));
-    } else
+    } else if (std::get<0>(obj2) == 0)
     {
         com1 = std::get<16>(obj1);
         rad1 = std::get<15>(obj1);
@@ -551,8 +590,39 @@ bool precomputation(scene_object obj1, scene_object obj2)
         Eigen::Vector3d e20 = sV.row(sF.row(0)(2)).transpose() - sV.row(sF.row(0)(0)).transpose();
         Eigen::Vector3d dir = e10.cross(e20);
         dir = dir.normalized();
-        double dist = abs((com1 - pos).dot(dir));
+        double dist = (com1 - pos).dot(dir);
     	return dist - rad1 <= 0.1;
+    } else
+    {
+
+        Eigen::Vector3d dir;
+        //std::cout << std::get<16>(obj2)(0) << "||" << std::get<16>(obj2)(1) << "||" << std::get<16>(obj2)(2) << "\n\n";
+    	if (std::get<16>(obj2)(0) > 5)
+    	{
+            dir = Eigen::Vector3d(-1, 0, 0);
+    	} else if (std::get<16>(obj2)(0) < -5)
+    	{
+            dir = Eigen::Vector3d(1, 0, 0);
+    	} else if (std::get<16>(obj2)(2) < -5)
+    	{
+            dir = Eigen::Vector3d(0, 0, 1);
+    	}
+        else if (std::get<16>(obj2)(2) > 5)
+        {
+            dir = Eigen::Vector3d(0, 0, -1);
+        } else
+        {
+            dir = Eigen::Vector3d(0, 1, 0);
+        }
+        //std::cout << dir(0) << "||" << dir(1) << "||" << dir(2) << "\n\n";
+        com1 = std::get<16>(obj1);
+        rad1 = std::get<15>(obj1);
+        Eigen::MatrixXd sV = std::get<1>(obj2);
+        Eigen::MatrixXi sF = std::get<2>(obj2);
+
+        Eigen::Vector3d pos = sV.row(0).transpose();
+        double dist = (com1 - pos).dot(dir);
+        return dist - rad1 <= 0.1;
     }
 }
 

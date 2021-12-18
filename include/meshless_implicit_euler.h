@@ -56,6 +56,7 @@ inline void meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, d
         //compute goal positions
         //get current center of mass
         Eigen::Vector3d center_of_masst;
+        comt = center_of_masst;
         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(qi_tmp.data(),3,qi_tmp.rows()/3);
         center_of_masst = Vt.transpose().colwise().mean();
         //get p and q: vertex position relative to current and original CoM 

@@ -16,11 +16,25 @@ double dt = 0.003; //time step
 
 //simulation loop
 bool simulating = true;
-bool simulation_callback(Eigen::Vector3i force_setup) {
-    
-    while(simulating){
-	 	simulate(geometry, dt, t, mtx, force_setup);
-     	t += dt;
+bool simulation_callback(Eigen::Vector4i force_setup) {
+
+    double mean_duration = 0;
+    double duration_count = 0;
+    while (simulating) {
+        std::clock_t start;
+        double duration;
+
+        start = std::clock();
+        simulate(geometry, dt, t, mtx, force_setup);
+        t += dt;
+        duration = (std::clock() - start) / (double)CLOCKS_PER_SEC;
+        mean_duration += duration;
+        duration_count += 1.0;
+        if (int(duration_count) % 20 == 0) {
+            std::cout << "fps: " << 1.0/(mean_duration / duration_count) << "\t num of object: " << geometry.size() <<'\n';
+            mean_duration = 0;
+            duration_count = 0;
+        }
     }
     return false;
 }
@@ -50,7 +64,7 @@ int main(int argc, char **argv) {
     std::cout<<"Start Meshless Deformation...\n";
     
     //setup
-    Eigen::Vector3i force_setup;
+    Eigen::Vector4i force_setup;
     setup(argc, argv, geometry,force_setup, dt);
     std::cout<<"t:"<<dt<<std::endl;
     //run simulation in seperate thread to avoid slowing down the UI

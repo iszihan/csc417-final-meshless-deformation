@@ -28,6 +28,7 @@ meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, do
     //std::cout<<"inside integration..."<<std::endl;
     //gather forces
     force(tmp_force,q,qdot);
+    //std::cout<<tmp_force.norm()<<std::endl;    
 
     //update all vertices without the goal position fitting
     Eigen::VectorXd qdot_tmp = qdot + dt * tmp_force/mass;     
@@ -53,6 +54,7 @@ meshless_implicit_euler(Eigen::VectorXd &q, Eigen::VectorXd &qdot, double dt, do
         //compute goal positions
         //get current center of mass
         Eigen::Vector3d center_of_masst;
+        comt = center_of_masst;
         Eigen::MatrixXd Vt = Eigen::Map<Eigen::MatrixXd>(qi_tmp.data(),3,qi_tmp.rows()/3);
         center_of_masst = Vt.transpose().colwise().mean();
         //get p and q: vertex position relative to current and original CoM 
